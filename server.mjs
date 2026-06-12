@@ -107,6 +107,11 @@ server.listen(PORT, HOST, () => {
 
 async function callCommandCodeAlpha(body, model) {
   const sessionId = randomUUID()
+  const startedAt = Date.now()
+  const messages = toCommandCodeMessages(body.messages)
+  const tools = Array.isArray(body.tools) && body.tools.length > 0
+    ? toCommandCodeTools(body.tools)
+    : []
   const payload = {
     mode: "custom-agent",
     config: buildEnvironmentContext(),
@@ -117,11 +122,13 @@ async function callCommandCodeAlpha(body, model) {
       model,
       max_tokens: typeof body.max_tokens === "number" ? body.max_tokens : 8192,
       temperature: typeof body.temperature === "number" ? body.temperature : undefined,
-      messages: toCommandCodeMessages(body.messages),
-      ...(Array.isArray(body.tools) && body.tools.length > 0 ? { tools: toCommandCodeTools(body.tools) } : {}),
+      messages,
+      ...(tools.length > 0 ? { tools } : {}),
       ...(systemTextFromMessages(body.messages) ? { system: systemTextFromMessages(body.messages) } : {}),
     },
   }
+
+  log(`REQUEST start session=${sessionId} model=${model} stream=${body.stream === true} messages=${messages.length} tools=${tools.length}`)
 
   const response = await fetch(`${COMMANDCODE_BASE_URL}/alpha/generate`, {
     method: "POST",
@@ -152,7 +159,9 @@ async function callCommandCodeAlpha(body, model) {
   return {
     events,
     finishReason: finishEvent?.finishReason ?? finishEvent?.finish_reason ?? finishEvent?.rawFinishReason ?? null,
-    usage: finishEvent?.totalUsage ?? finishEvent?.total_usage ?? finishEvent?.usage ?? null,
+    usage: extractUsage(finishEvent?.totalUsage ?? finishEvent?.total_usage ?? finishEvent?.usage ?? null),
+    durationMs: Date.now() - startedAt,
+    sessionId,
   }
 }
 
@@ -196,7 +205,7 @@ function toCommandCodeMessages(messages) {
 
     if (role === "tool") {
       const toolCallId = typeof message.tool_call_id === "string" ? message.tool_call_id : ""
-      const output = messageText(message.content) || ""
+      const output = messageText(message.content) || jsonString(message.content)
       converted.push({
         role: "tool",
         content: [
@@ -279,6 +288,8 @@ function messageText(content) {
         if (typeof part === "string") return part
         if (!part || typeof part !== "object") return ""
         if (part.type === "text") return typeof part.text === "string" ? part.text : ""
+        if (part.type === "input_text") return typeof part.text === "string" ? part.text : ""
+        if (part.type === "output_text") return typeof part.text === "string" ? part.text : ""
         return ""
       })
       .join("")
@@ -336,6 +347,11 @@ function buildOpenAICompletion(model, upstream) {
       },
     ],
     usage,
+    _meta: {
+      shim: "commandcode-go-shim",
+      duration_ms: upstream.durationMs,
+      session_id: upstream.sessionId,
+    },
   }
 }
 
@@ -460,24 +476,38 @@ function collectText(events) {
 }
 
 function collectToolCalls(events) {
-  return events
-    .filter(event => {
-      const type = String(event.type || event.event || "").toLowerCase()
-      return type === "tool-call" || type === "tool_call"
-    })
-    .map(event => {
-      const id = event.toolCallId || event.tool_call_id || event.id || `call_${randomUUID()}`
-      const name = event.toolName || event.tool_name || event.name || "tool"
-      const input = event.input ?? event.args ?? event.arguments ?? {}
-      return {
+  const calls = new Map()
+
+  for (const event of events) {
+    const type = String(event.type || event.event || "").toLowerCase()
+    if (type !== "tool-call" && type !== "tool_call") continue
+
+    const id = event.toolCallId || event.tool_call_id || event.id || `call_${randomUUID()}`
+    const name = event.toolName || event.tool_name || event.name || "tool"
+    const rawInput = event.input ?? event.args ?? event.arguments ?? {}
+    const normalizedInput = typeof rawInput === "string" ? parseJsonString(rawInput) : rawInput
+    const current = calls.get(id)
+
+    if (!current) {
+      calls.set(id, {
         id,
         type: "function",
         function: {
           name,
-          arguments: JSON.stringify(typeof input === "string" ? parseJsonString(input) : input),
+          arguments: jsonString(normalizedInput),
         },
-      }
-    })
+      })
+      continue
+    }
+
+    current.function.name = current.function.name || name
+    current.function.arguments = mergeArgumentStrings(
+      current.function.arguments,
+      jsonString(normalizedInput),
+    )
+  }
+
+  return Array.from(calls.values())
 }
 
 function eventText(event) {
@@ -499,13 +529,21 @@ function normalizeFinishReason(reason) {
 }
 
 function normalizeUsage(usage) {
-  const prompt = numberOrZero(usage?.inputTokens ?? usage?.input_tokens)
-  const completion = numberOrZero(usage?.outputTokens ?? usage?.output_tokens)
-  return {
+  const prompt = numberOrZero(usage?.input_tokens)
+  const completion = numberOrZero(usage?.output_tokens)
+  const cachedRead = numberOrZero(usage?.cache_read_input_tokens)
+  const cachedWrite = numberOrZero(usage?.cache_creation_input_tokens)
+  const result = {
     prompt_tokens: prompt,
     completion_tokens: completion,
     total_tokens: prompt + completion,
   }
+  if (cachedRead > 0 || cachedWrite > 0) {
+    result.prompt_tokens_details = {
+      cached_tokens: cachedRead + cachedWrite,
+    }
+  }
+  return result
 }
 
 function buildEnvironmentContext() {
@@ -593,4 +631,99 @@ function writeSSE(res, payload) {
 
 function log(line) {
   appendFileSync(LOG_FILE, `[${new Date().toISOString()}] ${line}\n`)
+}
+
+function extractUsage(usage) {
+  if (!usage || typeof usage !== "object") return null
+
+  const input = numberOrZero(
+    usage.inputTokens ?? usage.input_tokens ?? usage.promptTokens ?? usage.prompt_tokens,
+  )
+  const output = numberOrZero(
+    usage.outputTokens ?? usage.output_tokens ?? usage.completionTokens ?? usage.completion_tokens,
+  )
+
+  const details =
+    objectOrNull(usage.inputTokenDetails)
+    || objectOrNull(usage.input_token_details)
+    || objectOrNull(usage.promptTokensDetails)
+    || objectOrNull(usage.prompt_tokens_details)
+
+  const cacheRead = numberOrZero(
+    details?.cacheReadTokens
+    ?? details?.cacheReadInputTokens
+    ?? details?.cacheHitTokens
+    ?? details?.cache_read_tokens
+    ?? details?.cache_read_input_tokens
+    ?? details?.cachedTokens
+    ?? usage.cacheReadTokens
+    ?? usage.cacheReadInputTokens
+    ?? usage.cache_read_tokens
+    ?? usage.cache_read_input_tokens
+    ?? usage.cachedTokens
+    ?? usage.cached_input_tokens,
+  )
+
+  const cacheWrite = numberOrZero(
+    details?.cacheWriteTokens
+    ?? details?.cacheWriteInputTokens
+    ?? details?.cacheCreationTokens
+    ?? details?.cacheCreationInputTokens
+    ?? details?.cache_write_tokens
+    ?? details?.cache_creation_tokens
+    ?? usage.cacheWriteTokens
+    ?? usage.cacheWriteInputTokens
+    ?? usage.cacheCreationTokens
+    ?? usage.cacheCreationInputTokens
+    ?? usage.cache_write_tokens
+    ?? usage.cache_creation_tokens
+    ?? usage.cache_creation_input_tokens,
+  )
+
+  const noCacheInput = numberOrZero(
+    details?.noCacheTokens
+    ?? details?.no_cache_tokens
+    ?? details?.uncachedTokens
+    ?? details?.uncached_tokens
+    ?? usage.noCacheTokens
+    ?? usage.no_cache_tokens
+    ?? usage.uncachedInputTokens
+    ?? usage.uncached_input_tokens,
+  )
+
+  const normalizedInput = noCacheInput > 0
+    ? noCacheInput
+    : Math.max(0, input - cacheRead - cacheWrite)
+
+  return {
+    input_tokens: normalizedInput,
+    output_tokens: output,
+    ...(cacheRead > 0 ? { cache_read_input_tokens: cacheRead } : {}),
+    ...(cacheWrite > 0 ? { cache_creation_input_tokens: cacheWrite } : {}),
+  }
+}
+
+function objectOrNull(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : null
+}
+
+function jsonString(value) {
+  try {
+    return JSON.stringify(value ?? {})
+  } catch {
+    return "{}"
+  }
+}
+
+function mergeArgumentStrings(current, incoming) {
+  try {
+    const currentParsed = parseJsonString(current)
+    const incomingParsed = parseJsonString(incoming)
+    return jsonString({
+      ...(objectOrNull(currentParsed) || {}),
+      ...(objectOrNull(incomingParsed) || {}),
+    })
+  } catch {
+    return incoming || current || "{}"
+  }
 }
