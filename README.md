@@ -59,6 +59,7 @@ commandcode-shim install-shell
 commandcode-shim uninstall-shell
 commandcode-shim status
 commandcode-shim doctor
+commandcode-shim refresh-models
 commandcode-shim set-api-key
 commandcode-shim reset-shell-choice
 commandcode-shim uninstall
@@ -120,6 +121,12 @@ El runtime:
 - prueba cuáles realmente responden para este acceso
 - excluye modelos `broken`
 - actualiza el provider `cmdshim` en OpenCode con la lista vigente
+
+Si querés forzarlo manualmente:
+
+```powershell
+commandcode-shim refresh-models
+```
 
 Esto está pensado específicamente para que el set de modelos del plan Go/$1 no quede congelado.
 

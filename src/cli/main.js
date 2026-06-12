@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url"
 import { clearPid, getRuntimeSettings, readCompatibilityMatrix, readConfig, readPid, readSecrets, writeConfig, writePid, writeSecrets } from "../config/store.js"
 import { getPaths } from "../config/paths.js"
 import { detectOpenCodeInstallations, inspectOpenCodeProvider, removeOpenCodeProvider, syncOpenCodeConfig } from "../opencode/config.js"
-import { startServer } from "../runtime/server.js"
+import { refreshModelCatalogNow, startServer } from "../runtime/server.js"
 import { canManageWindowsShell, chooseAndLaunchOpenCode, installWindowsShellIntegration, launchSpecificOpenCodeTarget, removeWindowsShellIntegration } from "../windows/shell.js"
 
 export async function runCli(args) {
@@ -30,6 +30,9 @@ export async function runCli(args) {
       return
     case "doctor":
       await doctorCommand()
+      return
+    case "refresh-models":
+      await refreshModelsCommand()
       return
     case "stop":
       await stopCommand()
@@ -211,6 +214,17 @@ async function doctorCommand() {
   console.log(`Modelos útiles en catálogo: ${modelCount}`)
 }
 
+async function refreshModelsCommand() {
+  console.log("Refrescando catálogo y compatibilidad de modelos...")
+  const matrix = await refreshModelCatalogNow()
+  const useful = Object.entries(matrix.models || {})
+    .filter(([, info]) => info?.status !== "broken")
+    .map(([id]) => id)
+  console.log(`Refresh completo. Modelos útiles: ${useful.length}`)
+  const hasNemotron = useful.some(id => id.toLowerCase().includes("nemotron"))
+  console.log(`Nemotron visible: ${hasNemotron ? "sí" : "no"}`)
+}
+
 async function stopCommand() {
   const pid = readPid()
   if (!pid) {
@@ -297,6 +311,7 @@ Comandos:
   uninstall-shell
   status
   doctor
+  refresh-models
   set-api-key
   reset-shell-choice
   uninstall`)

@@ -17,6 +17,12 @@ let compatibilityRefreshRunning = false
 let currentServer = null
 let availableCatalog = deriveCatalogFromCompatibility(compatibilityMatrix)
 
+export async function refreshModelCatalogNow() {
+  const settings = getRuntimeSettings()
+  const refreshMs = settings.compatibilityRefreshHours * 60 * 60 * 1000
+  return await maybeRefreshCompatibility("manual", refreshMs, settings, { force: true })
+}
+
 export async function startServer() {
   if (currentServer) return currentServer
 
@@ -420,7 +426,6 @@ function parseEventLines(raw) {
 function buildOpenAICompletion(model, upstream) {
   const id = `chatcmpl-${randomUUID()}`
   const created = Math.floor(Date.now() / 1000)
-  const reasoning = collectReasoning(upstream.events)
   const text = collectText(upstream.events)
   const toolCalls = collectToolCalls(upstream.events)
   const finishReason = toolCalls.length > 0
@@ -440,8 +445,8 @@ function buildOpenAICompletion(model, upstream) {
           role: "assistant",
           ...(toolCalls.length > 0 ? { tool_calls: toolCalls } : {}),
           content: toolCalls.length > 0
-            ? ((reasoning ? formatReasoningBlock(reasoning) : "") + (text || "") || null)
-            : `${reasoning ? formatReasoningBlock(reasoning) : ""}${text}`,
+            ? (text || null)
+            : text,
         },
         finish_reason: finishReason,
       },
@@ -458,7 +463,6 @@ function buildOpenAICompletion(model, upstream) {
 function streamOpenAIResponse(res, model, upstream) {
   const id = `chatcmpl-${randomUUID()}`
   const created = Math.floor(Date.now() / 1000)
-  const reasoning = collectReasoning(upstream.events)
   const toolCalls = collectToolCalls(upstream.events)
   const finishReason = toolCalls.length > 0
     ? "tool_calls"
@@ -484,22 +488,6 @@ function streamOpenAIResponse(res, model, upstream) {
       },
     ],
   })
-
-  if (reasoning) {
-    writeSSE(res, {
-      id,
-      object: "chat.completion.chunk",
-      created,
-      model,
-      choices: [
-        {
-          index: 0,
-          delta: { content: formatReasoningBlock(reasoning) },
-          finish_reason: null,
-        },
-      ],
-    })
-  }
 
   let sentText = false
   for (const event of upstream.events) {
@@ -666,10 +654,6 @@ function reasoningText(event) {
   return ""
 }
 
-function formatReasoningBlock(reasoning) {
-  return `[[reasoning:start]]\n${reasoning}\n[[reasoning:end]]\n\n`
-}
-
 function normalizeFinishReason(reason) {
   const normalized = String(reason || "").toLowerCase()
   if (normalized.includes("length") || normalized.includes("max")) return "length"
@@ -774,11 +758,11 @@ function scheduleCompatibilityRefresh(refreshMs, settings) {
   }, refreshMs)
 }
 
-async function maybeRefreshCompatibility(reason, refreshMs, settings) {
+async function maybeRefreshCompatibility(reason, refreshMs, settings, options = {}) {
   if (compatibilityRefreshRunning) return
   const updatedAt = compatibilityMatrix.updated_at ? Date.parse(compatibilityMatrix.updated_at) : 0
   const stale = !updatedAt || Number.isNaN(updatedAt) || (Date.now() - updatedAt >= refreshMs)
-  if (!stale && reason !== "startup-force") return
+  if (!options.force && !stale && reason !== "startup-force") return compatibilityMatrix
 
   compatibilityRefreshRunning = true
   log(`COMPAT refresh_start reason=${reason}`)
@@ -806,8 +790,10 @@ async function maybeRefreshCompatibility(reason, refreshMs, settings) {
       compatibilityMatrix,
     })
     log(`COMPAT refresh_done models=${Object.keys(next.models).length}`)
+    return compatibilityMatrix
   } catch (error) {
     log(`COMPAT refresh_error ${error instanceof Error ? error.stack || error.message : String(error)}`)
+    throw error
   } finally {
     compatibilityRefreshRunning = false
   }
