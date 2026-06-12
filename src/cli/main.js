@@ -258,7 +258,7 @@ async function openWithCommand(args) {
   const [target, ...pathParts] = args
   const targetPath = pathParts.join(" ").trim()
   if (!target || !targetPath) {
-    console.log("Uso: commandcode-shim open-with <desktop|cli> <ruta>")
+    console.log("Uso: ccga open-with <desktop|cli> <ruta>")
     return
   }
   await launchSpecificOpenCodeTarget(target, targetPath, ensureShimRunning)
@@ -298,7 +298,7 @@ async function uninstallCommand() {
 }
 
 function printHelp() {
-  console.log(`commandcode-shim
+  console.log(`ccga
 
 Comandos:
   setup

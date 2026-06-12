@@ -87,7 +87,7 @@ export async function startServer() {
       if (req.method === "POST" && url.pathname === "/v1/chat/completions") {
         if (!requireShimAuth(req, res, settings)) return
         if (!settings.commandCodeApiKey) {
-          return json(res, 500, openAIError("missing_api_key", `Falta API key. Corré: commandcode-shim setup o commandcode-shim set-api-key`))
+          return json(res, 500, openAIError("missing_api_key", `Falta API key. Corré: ccga setup o ccga set-api-key`))
         }
 
         const body = await readJson(req)
