@@ -1,4 +1,5 @@
 import { existsSync, readFileSync, writeFileSync, unlinkSync } from "node:fs"
+import { randomBytes } from "node:crypto"
 import { getPaths, ensureDir, ensureParentDir } from "./paths.js"
 
 const DEFAULT_CONFIG = {
@@ -43,7 +44,14 @@ export function writeConfig(nextConfig) {
 
 export function readSecrets() {
   const paths = getPaths()
-  return readJsonIfExists(paths.secretsFile) || {}
+  const secrets = readJsonIfExists(paths.secretsFile) || {}
+  if (!secrets.shimAccessToken) {
+    secrets.shimAccessToken = randomBytes(32).toString("hex")
+    ensureDir(paths.dataDir)
+    ensureParentDir(paths.secretsFile)
+    writeFileSync(paths.secretsFile, JSON.stringify(secrets, null, 2), "utf8")
+  }
+  return secrets
 }
 
 export function writeSecrets(nextSecrets) {
@@ -86,10 +94,12 @@ export function getRuntimeSettings() {
     host: firstNonEmpty(process.env.SHIM_HOST, process.env.CC_GO_SHIM_HOST, config.host) || DEFAULT_CONFIG.host,
     port: Number(firstNonEmpty(process.env.SHIM_PORT, process.env.CC_GO_SHIM_PORT, String(config.port || DEFAULT_CONFIG.port))),
     commandCodeApiKey: apiKey,
+    shimAccessToken: firstNonEmpty(process.env.COMMANDCODE_SHIM_TOKEN, secrets.shimAccessToken) || "",
     commandCodeBaseUrl: String(firstNonEmpty(process.env.COMMANDCODE_BASE_URL, config.commandCodeBaseUrl) || DEFAULT_CONFIG.commandCodeBaseUrl).replace(/\/+$/, ""),
     commandCodeVersion: firstNonEmpty(process.env.COMMANDCODE_VERSION, process.env.COMMAND_CODE_CLI_VERSION, config.commandCodeVersion) || DEFAULT_CONFIG.commandCodeVersion,
     compatibilityRefreshHours: Number(config.compatibilityRefreshHours || DEFAULT_CONFIG.compatibilityRefreshHours),
     providerId: config.providerId || DEFAULT_CONFIG.providerId,
+    allowRemoteHost: isEnabled(process.env.COMMANDCODE_SHIM_ALLOW_REMOTE) || isEnabled(process.env.CC_GO_SHIM_ALLOW_REMOTE),
   }
 }
 
@@ -146,6 +156,11 @@ function firstNonEmpty(...values) {
     if (typeof value === "string" && value.trim()) return value.trim()
   }
   return ""
+}
+
+function isEnabled(value) {
+  const normalized = String(value || "").trim().toLowerCase()
+  return ["1", "true", "yes", "y", "on"].includes(normalized)
 }
 
 function mergeDeep(base, extra) {

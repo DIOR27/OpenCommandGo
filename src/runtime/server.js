@@ -11,6 +11,8 @@ import { MODELS, MODEL_SET } from "../shared/models.js"
 import { deriveCatalogFromCompatibility, extractModelRows, fallbackCatalog, normalizeCatalogRows } from "../shared/catalog.js"
 
 const IMAGE_TEST_URL = "https://upload.wikimedia.org/wikipedia/commons/thumb/3/3a/Cat03.jpg/320px-Cat03.jpg"
+const MAX_REQUEST_BYTES = 2 * 1024 * 1024
+const UPSTREAM_TIMEOUT_MS = 120000
 
 let compatibilityMatrix = readCompatibilityMatrix()
 let compatibilityRefreshRunning = false
@@ -27,14 +29,21 @@ export async function startServer() {
   if (currentServer) return currentServer
 
   const settings = getRuntimeSettings()
+  if (!settings.allowRemoteHost && !isLoopbackHost(settings.host)) {
+    throw new Error(`Host no permitido para uso local: ${settings.host}. Usá 127.0.0.1 o localhost.`)
+  }
   const paths = getPaths()
   ensureDir(paths.logDir)
+  syncOpenCodeConfig({
+    providerId: settings.providerId,
+    host: settings.host,
+    port: settings.port,
+    compatibilityMatrix,
+  })
 
   const refreshMs = settings.compatibilityRefreshHours * 60 * 60 * 1000
   const server = createServer(async (req, res) => {
     try {
-      addCors(res)
-
       if (req.method === "OPTIONS") {
         res.writeHead(204)
         res.end()
@@ -44,6 +53,7 @@ export async function startServer() {
       const url = new URL(req.url || "/", `http://${req.headers.host || "127.0.0.1"}`)
 
       if (req.method === "GET" && url.pathname === "/health") {
+        if (!requireShimAuth(req, res, settings)) return
         return json(res, 200, {
           ok: true,
           provider: "commandcode-go-shim",
@@ -55,10 +65,12 @@ export async function startServer() {
       }
 
       if (req.method === "GET" && url.pathname === "/compatibility") {
+        if (!requireShimAuth(req, res, settings)) return
         return json(res, 200, compatibilityMatrix)
       }
 
       if (req.method === "GET" && url.pathname === "/v1/models") {
+        if (!requireShimAuth(req, res, settings)) return
         return json(res, 200, {
           object: "list",
           data: availableCatalog.map(model => ({
@@ -73,6 +85,7 @@ export async function startServer() {
       }
 
       if (req.method === "POST" && url.pathname === "/v1/chat/completions") {
+        if (!requireShimAuth(req, res, settings)) return
         if (!settings.commandCodeApiKey) {
           return json(res, 500, openAIError("missing_api_key", `Falta API key. Corré: commandcode-shim setup o commandcode-shim set-api-key`))
         }
@@ -163,6 +176,7 @@ async function callCommandCodeAlpha(body, model, settings) {
       "x-session-id": sessionId,
       "x-taste-learning": "false",
     },
+    signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
     body: JSON.stringify(payload),
   })
 
@@ -697,12 +711,6 @@ function openAIError(code, message) {
   return { error: { message, type: code } }
 }
 
-function addCors(res) {
-  res.setHeader("Access-Control-Allow-Origin", "*")
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization")
-  res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
-}
-
 function json(res, status, payload) {
   res.writeHead(status, { "Content-Type": "application/json; charset=utf-8" })
   res.end(JSON.stringify(payload))
@@ -713,7 +721,8 @@ function readJson(req) {
     let body = ""
     req.on("data", chunk => {
       body += chunk
-      if (body.length > 5 * 1024 * 1024) {
+      if (body.length > MAX_REQUEST_BYTES) {
+        req.destroy()
         reject(new Error("Body demasiado grande"))
       }
     })
@@ -1042,4 +1051,38 @@ function summarizeIncomingMessages(messages) {
     }).join(",")
     return `#${index}:${message.role || "unknown"}:[${kinds}]`
   }).join(" | ")
+}
+
+function requireShimAuth(req, res, settings) {
+  const expected = String(settings.shimAccessToken || "").trim()
+  if (!expected) {
+    json(res, 500, openAIError("server_error", "Falta token interno del shim"))
+    return false
+  }
+
+  const provided = getRequestShimToken(req)
+  if (provided !== expected) {
+    json(res, 401, openAIError("unauthorized", "Token del shim inválido o faltante"))
+    return false
+  }
+
+  return true
+}
+
+function getRequestShimToken(req) {
+  const direct = req.headers["x-commandcode-shim-token"]
+  if (typeof direct === "string" && direct.trim()) return direct.trim()
+
+  const authorization = req.headers.authorization
+  if (typeof authorization === "string") {
+    const match = authorization.match(/^Bearer\s+(.+)$/i)
+    if (match?.[1]) return match[1].trim()
+  }
+
+  return ""
+}
+
+function isLoopbackHost(host) {
+  const normalized = String(host || "").trim().toLowerCase()
+  return ["127.0.0.1", "localhost", "::1"].includes(normalized)
 }

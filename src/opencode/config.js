@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { getPaths, ensureParentDir } from "../config/paths.js"
+import { readSecrets } from "../config/store.js"
 import { deriveCatalogFromCompatibility, fallbackCatalog } from "../shared/catalog.js"
 
 export function detectOpenCodeInstallations() {
@@ -15,6 +16,7 @@ export function detectOpenCodeInstallations() {
 
 export function syncOpenCodeConfig({ providerId, host, port, compatibilityMatrix, createIfMissing = false }) {
   const paths = getPaths()
+  const secrets = readSecrets()
   if (!existsSync(paths.opencodeConfigFile) && !createIfMissing) return null
   ensureParentDir(paths.opencodeConfigFile)
   const config = readJson(paths.opencodeConfigFile) || { $schema: "https://opencode.ai/config.json" }
@@ -24,6 +26,9 @@ export function syncOpenCodeConfig({ providerId, host, port, compatibilityMatrix
     name: "Command Code Shim",
     options: {
       baseURL: `http://${host}:${port}/v1`,
+      headers: {
+        "X-CommandCode-Shim-Token": secrets.shimAccessToken,
+      },
     },
     models: buildModelConfig(compatibilityMatrix),
   }

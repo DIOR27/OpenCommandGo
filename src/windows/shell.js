@@ -4,9 +4,11 @@ import { execFileSync, spawn } from "node:child_process"
 import { readConfig, writeConfig } from "../config/store.js"
 import { detectOpenCodeInstallations } from "../opencode/config.js"
 
-const SHELL_KEY = "HKCU\\Software\\Classes\\Directory\\shell\\CommandCodeShimOpenCode"
-const SHELL_BG_KEY = "HKCU\\Software\\Classes\\Directory\\Background\\shell\\CommandCodeShimOpenCode"
-const MENU_LABEL = "Abrir con OpenCode..."
+const ROOT_VERB = "CommandCodeShimOpenCode"
+const SHELL_KEY = `HKCU\\Software\\Classes\\Directory\\shell\\${ROOT_VERB}`
+const SHELL_BG_KEY = `HKCU\\Software\\Classes\\Directory\\Background\\shell\\${ROOT_VERB}`
+const COMMAND_STORE_KEY = "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\CommandStore\\shell"
+const MENU_LABEL = "Abrir con OpenCode"
 const ICON_FALLBACK = join(process.env.LOCALAPPDATA || "", "Programs", "OpenCode", "OpenCode.exe")
 
 export function canManageWindowsShell() {
@@ -21,13 +23,20 @@ export function installWindowsShellIntegration() {
   const detected = detectOpenCodeInstallations()
   const icon = detected.desktop && existsSync(detected.desktop) ? detected.desktop : ICON_FALLBACK
 
-  ensureMenuRoot(SHELL_KEY, icon)
-  ensureMenuRoot(SHELL_BG_KEY, icon)
+  removeWindowsShellIntegration()
 
-  writeRegistrySubcommand(SHELL_KEY, "desktop", "OpenCode Desktop", command, "%1", icon)
-  writeRegistrySubcommand(SHELL_KEY, "cli", "OpenCode CLI", command, "%1", icon)
-  writeRegistrySubcommand(SHELL_BG_KEY, "desktop", "OpenCode Desktop", command, "%V", icon)
-  writeRegistrySubcommand(SHELL_BG_KEY, "cli", "OpenCode CLI", command, "%V", icon)
+  const directoryDesktopVerb = `${ROOT_VERB}.directory.desktop`
+  const directoryCliVerb = `${ROOT_VERB}.directory.cli`
+  const backgroundDesktopVerb = `${ROOT_VERB}.background.desktop`
+  const backgroundCliVerb = `${ROOT_VERB}.background.cli`
+
+  ensureMenuRoot(SHELL_KEY, icon, [directoryDesktopVerb, directoryCliVerb])
+  ensureMenuRoot(SHELL_BG_KEY, icon, [backgroundDesktopVerb, backgroundCliVerb])
+
+  writeCommandStoreVerb(directoryDesktopVerb, "OpenCode Desktop", command, "desktop", "%1", icon)
+  writeCommandStoreVerb(directoryCliVerb, "OpenCode CLI", command, "cli", "%1", icon)
+  writeCommandStoreVerb(backgroundDesktopVerb, "OpenCode Desktop", command, "desktop", "%V", icon)
+  writeCommandStoreVerb(backgroundCliVerb, "OpenCode CLI", command, "cli", "%V", icon)
 
   const config = readConfig()
   config.shell = {
@@ -42,6 +51,10 @@ export function removeWindowsShellIntegration() {
   if (!canManageWindowsShell()) return { removed: false, reason: "not_windows" }
   execRegDelete(SHELL_KEY)
   execRegDelete(SHELL_BG_KEY)
+  execRegDelete(`${COMMAND_STORE_KEY}\\${ROOT_VERB}.directory.desktop`)
+  execRegDelete(`${COMMAND_STORE_KEY}\\${ROOT_VERB}.directory.cli`)
+  execRegDelete(`${COMMAND_STORE_KEY}\\${ROOT_VERB}.background.desktop`)
+  execRegDelete(`${COMMAND_STORE_KEY}\\${ROOT_VERB}.background.cli`)
   const config = readConfig()
   config.shell = {
     ...(config.shell || {}),
@@ -127,26 +140,26 @@ function resolveShellCommand() {
   }
 }
 
-function ensureMenuRoot(key, icon) {
-  execFileSync("reg", ["add", key, "/ve", "/d", MENU_LABEL, "/f"], { stdio: "ignore" })
+function ensureMenuRoot(key, icon, subcommands) {
+  execFileSync("reg", ["add", key, "/ve", "/f"], { stdio: "ignore" })
   execFileSync("reg", ["add", key, "/v", "MUIVerb", "/d", MENU_LABEL, "/f"], { stdio: "ignore" })
-  execFileSync("reg", ["add", key, "/v", "SubCommands", "/d", "", "/f"], { stdio: "ignore" })
+  execFileSync("reg", ["add", key, "/v", "SubCommands", "/d", subcommands.join(";"), "/f"], { stdio: "ignore" })
   if (icon) {
     execFileSync("reg", ["add", key, "/v", "Icon", "/d", icon, "/f"], { stdio: "ignore" })
   }
 }
 
-function writeRegistrySubcommand(rootKey, childKey, label, commandBase, argToken, icon) {
-  const subKey = `${rootKey}\\shell\\${childKey}`
-  execFileSync("reg", ["add", subKey, "/ve", "/d", label, "/f"], { stdio: "ignore" })
-  execFileSync("reg", ["add", subKey, "/v", "MUIVerb", "/d", label, "/f"], { stdio: "ignore" })
+function writeCommandStoreVerb(verb, label, commandBase, target, argToken, icon) {
+  const verbKey = `${COMMAND_STORE_KEY}\\${verb}`
+  execFileSync("reg", ["add", verbKey, "/ve", "/f"], { stdio: "ignore" })
+  execFileSync("reg", ["add", verbKey, "/v", "MUIVerb", "/d", label, "/f"], { stdio: "ignore" })
   if (icon) {
-    execFileSync("reg", ["add", subKey, "/v", "Icon", "/d", icon, "/f"], { stdio: "ignore" })
+    execFileSync("reg", ["add", verbKey, "/v", "Icon", "/d", icon, "/f"], { stdio: "ignore" })
   }
   const commandValue = commandBase.includes('cmd.exe') || commandBase.includes('cmd" /d /s /c')
-    ? `${commandBase} ${childKey} \"${argToken}\"\"`
-    : `${commandBase} ${childKey} \"${argToken}\"`
-  execFileSync("reg", ["add", `${subKey}\\command`, "/ve", "/d", commandValue, "/f"], { stdio: "ignore" })
+    ? `${commandBase} ${target} \"${argToken}\"\"`
+    : `${commandBase} ${target} \"${argToken}\"`
+  execFileSync("reg", ["add", `${verbKey}\\command`, "/ve", "/d", commandValue, "/f"], { stdio: "ignore" })
 }
 
 function execRegDelete(key) {

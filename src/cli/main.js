@@ -339,8 +339,11 @@ function normalizePort(value, fallback) {
 }
 
 async function readHealth(host, port) {
+  const settings = getRuntimeSettings()
   try {
-    const response = await fetch(`http://${host}:${port}/health`)
+    const response = await fetch(`http://${host}:${port}/health`, {
+      headers: getShimHeaders(settings.shimAccessToken),
+    })
     if (!response.ok) return null
     return await response.json()
   } catch {
@@ -369,5 +372,11 @@ function isProcessAlive(pid) {
     return true
   } catch {
     return false
+  }
+}
+
+function getShimHeaders(token) {
+  return {
+    "X-CommandCode-Shim-Token": token,
   }
 }
