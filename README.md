@@ -1,33 +1,33 @@
 # commandcode-go-around
 
-CLI pública para usar modelos de Command Code Go desde OpenCode a través de un shim local OpenAI-compatible.
+Public CLI to use Command Code Go models from OpenCode via a local OpenAI-compatible shim.
 
-Binario corto principal:
+Main short binary:
 
 - `ccga`
 
-## Qué hace
+## What it does
 
-- levanta un shim local en `127.0.0.1`
-- sincroniza un provider custom en OpenCode
-- mantiene catálogo dinámico de modelos útiles
-- protege el shim con token interno local
-- incluye comandos de setup, diagnóstico, refresh y control del runtime
+- Launches a local shim on `127.0.0.1`
+- Synchronizes a custom provider in OpenCode
+- Maintains a dynamic catalog of useful models
+- Protects the shim with an internal local token
+- Includes setup, diagnostics, refresh, and runtime control commands
 
-## Instalación
+## Installation
 
 ```powershell
 npm install -g .
 ```
 
-## Primer uso
+## First use
 
 ```powershell
 ccga setup
 ccga start --background
 ```
 
-## Comandos
+## Commands
 
 ```powershell
 ccga setup
@@ -39,16 +39,16 @@ ccga status
 ccga doctor
 ccga refresh-models
 ccga set-api-key
-ccga open-path "C:\\ruta\\a\\carpeta"
-ccga open-with desktop "C:\\ruta\\a\\carpeta"
-ccga open-with cli "C:\\ruta\\a\\carpeta"
+ccga open-path "C:\\path\\to\\folder"
+ccga open-with desktop "C:\\path\\to\\folder"
+ccga open-with cli "C:\\path\\to\\folder"
 ccga install-shell
 ccga uninstall-shell
 ccga reset-shell-choice
 ccga uninstall
 ```
 
-Compatibilidad:
+Compatibility:
 
 ```powershell
 ccga ...
@@ -56,9 +56,9 @@ commandcode-shim ...
 commandcode-go-around ...
 ```
 
-también siguen funcionando como alias del binario.
+also continue working as aliases of the binary.
 
-## Configuración local
+## Local Configuration
 
 ### Windows
 
@@ -76,7 +76,7 @@ también siguen funcionando como alias del binario.
 
 ## OpenCode
 
-El setup/sync actualiza:
+The setup/sync updates:
 
 - `~/.config/opencode/opencode.json`
 
@@ -88,65 +88,65 @@ Base URL:
 
 - `http://127.0.0.1:4310/v1`
 
-El shim escribe también un header interno para que OpenCode sea el cliente válido del provider local.
+The shim also writes an internal header so that OpenCode is the only valid client of the local provider.
 
-## Modelos
+## Models
 
-El catálogo no es fijo.
+The catalog is not static.
 
-El runtime:
+The runtime:
 
-- consulta `https://api.commandcode.ai/provider/v1/models`
-- filtra candidatos compatibles
-- prueba compatibilidad de forma conservadora
-- evita podar el catálogo por errores transitorios de cuota/crédito
-- resincroniza los modelos visibles en OpenCode
+- Queries `https://api.commandcode.ai/provider/v1/models`
+- Filters compatible candidates
+- Tests compatibility conservatively
+- Avoids pruning the catalog due to transient quota/credit errors
+- Resynchronizes visible models in OpenCode
 
-Para forzar actualización:
+To force an update:
 
 ```powershell
 ccga refresh-models
 ```
 
-## Seguridad actual
+## Security
 
-- loopback local por defecto (`127.0.0.1`)
-- token interno obligatorio entre OpenCode y el shim
-- sin CORS abierto
-- timeout upstream
-- límite de body más estricto
+- Local loopback by default (`127.0.0.1`)
+- Mandatory internal token between OpenCode and the shim
+- No open CORS
+- Upstream timeout
+- Stricter body limit
 
-## Limitaciones actuales
+## Current Limitations
 
-- la integración de shell de Windows está incluida como comando, pero puede requerir iteración adicional según versión de Explorer
-- los niveles de thinking/reasoning por modelo no se inventan; solo se expondrán cuando exista mapeo real
-- depende de endpoints de Command Code que pueden cambiar
+- Windows shell integration is included as a command, but may require additional iteration depending on the Explorer version
+- Thinking/reasoning levels per model are not made up; they will only be exposed when a real mapping exists
+- Depends on Command Code endpoints which may change
 
-## Desarrollo local
+## Local Development
 
-Dentro del proyecto:
+Within the project:
 
 ```powershell
 npm start
 ```
 
-Empaquetado de prueba:
+Dry-run packaging:
 
 ```powershell
 npm run pack:dry-run
 ```
 
-## Publicación
+## Publishing
 
-El paquete está preparado para publicación pública en npm con:
+The package is prepared for public publication on npm with:
 
-- nombre `commandcode-go-around`
-- binario principal `commandcode-go-around`
-- alias `commandcode-shim`
+- Name `commandcode-go-around`
+- Main binary `commandcode-go-around`
+- Alias `commandcode-shim`
 - `publishConfig.access=public`
 
-## Nota de licencia
+## License Note
 
-El `package.json` actual está en `UNLICENSED`.
+The current `package.json` is set to `UNLICENSED`.
 
-Antes de publicar de forma definitiva, cambiá ese campo si querés otorgar permisos de uso/redistribución.
+Before publishing definitively, change this field if you want to grant usage/redistribution permissions.
