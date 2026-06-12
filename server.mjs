@@ -155,6 +155,8 @@ async function callCommandCodeAlpha(body, model) {
   const finishEvent = [...events].reverse().find(event =>
     ["finish", "done", "message_stop"].includes(String(event.type || event.event || "").toLowerCase()),
   ) || null
+  const reasoning = collectReasoning(events)
+  log(`REQUEST done session=${sessionId} model=${model} duration_ms=${Date.now() - startedAt} events=${events.length} reasoning_chars=${reasoning.length}`)
 
   return {
     events,
@@ -323,6 +325,7 @@ function parseEventLines(raw) {
 function buildOpenAICompletion(model, upstream) {
   const id = `chatcmpl-${randomUUID()}`
   const created = Math.floor(Date.now() / 1000)
+  const reasoning = collectReasoning(upstream.events)
   const text = collectText(upstream.events)
   const toolCalls = collectToolCalls(upstream.events)
   const finishReason = toolCalls.length > 0
@@ -341,7 +344,9 @@ function buildOpenAICompletion(model, upstream) {
         message: {
           role: "assistant",
           ...(toolCalls.length > 0 ? { tool_calls: toolCalls } : {}),
-          content: toolCalls.length > 0 ? (text || null) : text,
+          content: toolCalls.length > 0
+            ? ((reasoning ? formatReasoningBlock(reasoning) : "") + (text || "") || null)
+            : `${reasoning ? formatReasoningBlock(reasoning) : ""}${text}`,
         },
         finish_reason: finishReason,
       },
@@ -358,6 +363,7 @@ function buildOpenAICompletion(model, upstream) {
 function streamOpenAIResponse(res, model, upstream) {
   const id = `chatcmpl-${randomUUID()}`
   const created = Math.floor(Date.now() / 1000)
+  const reasoning = collectReasoning(upstream.events)
   const toolCalls = collectToolCalls(upstream.events)
   const finishReason = toolCalls.length > 0
     ? "tool_calls"
@@ -383,6 +389,22 @@ function streamOpenAIResponse(res, model, upstream) {
       },
     ],
   })
+
+  if (reasoning) {
+    writeSSE(res, {
+      id,
+      object: "chat.completion.chunk",
+      created,
+      model,
+      choices: [
+        {
+          index: 0,
+          delta: { content: formatReasoningBlock(reasoning) },
+          finish_reason: null,
+        },
+      ],
+    })
+  }
 
   let sentText = false
   for (const event of upstream.events) {
@@ -475,6 +497,22 @@ function collectText(events) {
   return events.map(eventText).filter(Boolean).join("")
 }
 
+function collectReasoning(events) {
+  let sawReasoning = false
+  const parts = []
+
+  for (const event of events) {
+    const type = String(event.type || event.event || "").toLowerCase()
+    if (type !== "reasoning-delta" && type !== "reasoning_delta") continue
+    const piece = reasoningText(event)
+    if (!piece) continue
+    sawReasoning = true
+    parts.push(piece)
+  }
+
+  return sawReasoning ? parts.join("") : ""
+}
+
 function collectToolCalls(events) {
   const calls = new Map()
 
@@ -519,6 +557,22 @@ function eventText(event) {
   if (typeof event.delta === "string") return event.delta
   if (typeof event.content === "string") return event.content
   return ""
+}
+
+function reasoningText(event) {
+  const type = String(event.type || event.event || "").toLowerCase()
+  if (type !== "reasoning-delta" && type !== "reasoning_delta") {
+    return ""
+  }
+  if (typeof event.thinking === "string") return event.thinking
+  if (typeof event.text === "string") return event.text
+  if (typeof event.delta === "string") return event.delta
+  if (typeof event.content === "string") return event.content
+  return ""
+}
+
+function formatReasoningBlock(reasoning) {
+  return `[[reasoning:start]]\n${reasoning}\n[[reasoning:end]]\n\n`
 }
 
 function normalizeFinishReason(reason) {
