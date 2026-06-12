@@ -62,7 +62,6 @@ function buildModelConfig(compatibilityMatrix) {
     const compat = compatibilityMatrix?.models?.[id]
     if (compat?.status === "broken") continue
     const supportsImage = !!compat?.image?.ok
-    const supportsReasoning = !!compat?.reasoning?.ok
     models[id] = {
       name,
       limit: {
@@ -73,15 +72,6 @@ function buildModelConfig(compatibilityMatrix) {
         input: supportsImage ? ["text", "image"] : ["text"],
         output: ["text"],
       },
-      ...(supportsReasoning
-        ? {
-            variants: {
-              default: {
-                label: "Reasoning",
-              },
-            },
-          }
-        : {}),
     }
   }
   return models

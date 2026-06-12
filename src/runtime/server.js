@@ -786,6 +786,18 @@ async function maybeRefreshCompatibility(reason, refreshMs, settings, options = 
     for (const { id, name, context_length } of catalog) {
       const tested = await testModelCompatibility(id, name, settings)
       tested.context_length = context_length
+      const previous = compatibilityMatrix?.models?.[id]
+      if (shouldPreservePreviousCompatibility(tested, previous)) {
+        next.models[id] = {
+          ...previous,
+          name,
+          context_length,
+          tested_at: tested.tested_at,
+          last_probe_status: tested.status,
+          last_probe_notes: tested.notes,
+        }
+        continue
+      }
       next.models[id] = tested
     }
 
@@ -932,8 +944,10 @@ async function testModelCompatibility(model, displayName, settings) {
   }
 
   const capabilities = [summary.text.ok, summary.image.ok, summary.reasoning.ok, summary.tools.ok].filter(Boolean).length
+  const quotaBlocked = summary.notes.some(note => isInsufficientCreditsMessage(note))
   summary.status =
-    capabilities >= 3 ? "ok"
+    quotaBlocked ? "quota_blocked"
+    : capabilities >= 3 ? "ok"
     : capabilities > 0 ? "degraded"
     : "broken"
 
@@ -1051,6 +1065,19 @@ function summarizeIncomingMessages(messages) {
     }).join(",")
     return `#${index}:${message.role || "unknown"}:[${kinds}]`
   }).join(" | ")
+}
+
+function shouldPreservePreviousCompatibility(next, previous) {
+  if (!previous || typeof previous !== "object") return false
+  if (next?.status !== "quota_blocked") return false
+  return ["ok", "degraded"].includes(String(previous.status || ""))
+}
+
+function isInsufficientCreditsMessage(text) {
+  const normalized = String(text || "").toLowerCase()
+  return normalized.includes("insufficient credits")
+    || normalized.includes("purchase more credits")
+    || normalized.includes("insufficient credit")
 }
 
 function requireShimAuth(req, res, settings) {
