@@ -17,7 +17,7 @@ Binario corto principal:
 ## Instalación
 
 ```powershell
-npm install -g commandcode-go-around
+npm install -g .
 ```
 
 ## Primer uso
