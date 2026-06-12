@@ -1,11 +1,13 @@
 {
   "name": "commandcode-go-shim",
   "version": "0.1.0",
-  "private": true,
   "type": "module",
   "description": "Local OpenAI-compatible shim for using Command Code Go models from OpenCode",
+  "bin": {
+    "commandcode-shim": "./bin/commandcode-shim.js"
+  },
   "scripts": {
-    "start": "node server.mjs"
+    "start": "node ./bin/commandcode-shim.js serve"
   },
   "engines": {
     "node": ">=20"
