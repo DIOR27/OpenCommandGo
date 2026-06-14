@@ -35,6 +35,9 @@ ccga start
 ccga start --background
 ccga serve
 ccga stop
+ccga autostart enable
+ccga autostart disable
+ccga autostart status
 ccga status
 ccga doctor
 ccga refresh-models
@@ -89,6 +92,22 @@ Base URL:
 - `http://127.0.0.1:4310/v1`
 
 The shim also writes an internal header so that OpenCode is the only valid client of the local provider.
+
+## Autostart
+
+You can register the shim to start automatically for your user session:
+
+```powershell
+ccga autostart enable
+ccga autostart status
+ccga autostart disable
+```
+
+Platform provider used by the CLI:
+
+- Windows: Startup folder (`shell:startup`)
+- macOS: LaunchAgent
+- Linux: user systemd service, with XDG autostart fallback
 
 ## Models
 

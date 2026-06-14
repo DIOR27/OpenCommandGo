@@ -13,6 +13,12 @@ const DEFAULT_CONFIG = {
     enabled: false,
     installed: false,
   },
+  autostart: {
+    enabled: false,
+    provider: null,
+    scope: "user",
+    mode: "logon",
+  },
   detectedOpenCode: {
     configFound: false,
     desktop: null,
@@ -31,6 +37,10 @@ export function readConfig() {
   merged.shell = {
     ...DEFAULT_CONFIG.shell,
     ...(merged.shell || {}),
+  }
+  merged.autostart = {
+    ...DEFAULT_CONFIG.autostart,
+    ...(merged.autostart || {}),
   }
   return merged
 }

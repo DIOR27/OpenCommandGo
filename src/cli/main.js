@@ -3,6 +3,7 @@ import { existsSync, rmSync } from "node:fs"
 import { createInterface } from "node:readline/promises"
 import { stdin, stdout } from "node:process"
 import { fileURLToPath } from "node:url"
+import { disableAutostart, enableAutostart, getAutostartStatus } from "../autostart/index.js"
 import { clearPid, getRuntimeSettings, readCompatibilityMatrix, readConfig, readPid, readSecrets, writeConfig, writePid, writeSecrets } from "../config/store.js"
 import { getPaths } from "../config/paths.js"
 import { detectOpenCodeInstallations, inspectOpenCodeProvider, removeOpenCodeProvider, syncOpenCodeConfig } from "../opencode/config.js"
@@ -46,6 +47,18 @@ export async function runCli(args) {
     case "install-shell":
       await installShellCommand()
       return
+    case "enable-autostart":
+      await enableAutostartCommand()
+      return
+    case "disable-autostart":
+      await disableAutostartCommand()
+      return
+    case "autostart-status":
+      await autostartStatusCommand()
+      return
+    case "autostart":
+      await autostartCommand(rest)
+      return
     case "uninstall-shell":
       await uninstallShellCommand()
       return
@@ -85,6 +98,8 @@ async function runSetup() {
 
     const shellAnswer = await rl.question("¿Querés instalar la integración de shell de Windows ahora? [Y/n]: ")
     const shellEnabled = normalizeYesNo(shellAnswer, true)
+    const autostartAnswer = await rl.question("¿Querés habilitar inicio automático del shim al iniciar sesión? [Y/n]: ")
+    const autostartEnabled = normalizeYesNo(autostartAnswer, true)
 
     const nextConfig = {
       ...currentConfig,
@@ -123,6 +138,18 @@ async function runSetup() {
       console.log(result.installed
         ? "Integración de shell de Windows instalada."
         : "No pude instalar la integración de shell de Windows.")
+    }
+
+    if (autostartEnabled) {
+      await enableAutostartCommand({ silentPrefix: true })
+    } else {
+      const refreshed = readConfig()
+      refreshed.autostart = {
+        ...(refreshed.autostart || {}),
+        enabled: false,
+      }
+      writeConfig(refreshed)
+      console.log("Inicio automático deshabilitado.")
     }
 
     console.log(`Config guardada en: ${getPaths().configFile}`)
@@ -180,6 +207,7 @@ async function statusCommand() {
   const config = readConfig()
   const detected = detectOpenCodeInstallations()
   const health = await readHealth(settings.host, settings.port)
+  const autostart = await getAutostartStatus()
   const compatibility = readCompatibilityMatrix()
   const modelCount = Object.values(compatibility.models || {}).filter(model => model?.status !== "broken").length
   console.log(`Shim: ${health ? "activo" : "inactivo"} (${settings.host}:${settings.port})`)
@@ -191,6 +219,8 @@ async function statusCommand() {
   console.log(`Desktop detectado: ${detected.desktop || "no"}`)
   console.log(`CLI detectado: ${detected.cli || "no"}`)
   console.log(`Shell Windows instalada: ${config.shell?.installed ? "sí" : "no"}`)
+  console.log(`Autostart habilitado: ${autostart.enabled ? "sí" : "no"}`)
+  console.log(`Autostart proveedor: ${autostart.provider || "no"}`)
   console.log(`Modelos útiles en catálogo: ${modelCount}`)
 }
 
@@ -200,6 +230,7 @@ async function doctorCommand() {
   const detected = detectOpenCodeInstallations()
   const health = await readHealth(settings.host, settings.port)
   const provider = inspectOpenCodeProvider(config.providerId)
+  const autostart = await getAutostartStatus()
   const compatibility = readCompatibilityMatrix()
   const modelCount = Object.values(compatibility.models || {}).filter(model => model?.status !== "broken").length
 
@@ -211,6 +242,8 @@ async function doctorCommand() {
   console.log(`CLI detectado: ${detected.cli ? "sí" : "no"}`)
   console.log(`Compat matrix: ${getPaths().compatibilityFile}`)
   console.log(`Shell Windows instalada: ${config.shell?.installed ? "sí" : "no"}`)
+  console.log(`Autostart configurado: ${autostart.enabled ? "sí" : "no"}`)
+  console.log(`Autostart proveedor: ${autostart.provider || "no"}`)
   console.log(`Modelos útiles en catálogo: ${modelCount}`)
 }
 
@@ -273,6 +306,45 @@ async function installShellCommand() {
   console.log(`No pude instalar la integración de shell (${result.reason}).`)
 }
 
+async function autostartCommand(args) {
+  const [subcommand = "status"] = args
+  switch (subcommand) {
+    case "enable":
+      await enableAutostartCommand()
+      return
+    case "disable":
+      await disableAutostartCommand()
+      return
+    case "status":
+      await autostartStatusCommand()
+      return
+    default:
+      console.log("Uso: ccga autostart <enable|disable|status>")
+  }
+}
+
+async function enableAutostartCommand(options = {}) {
+  const result = await enableAutostart()
+  if (!options.silentPrefix) console.log("Inicio automático habilitado.")
+  console.log(`Proveedor: ${result.provider}`)
+  console.log("Comando: ccga start --background")
+}
+
+async function disableAutostartCommand() {
+  const result = await disableAutostart()
+  console.log("Inicio automático deshabilitado.")
+  console.log(`Proveedor: ${result.provider}`)
+}
+
+async function autostartStatusCommand() {
+  const status = await getAutostartStatus()
+  console.log(`Autostart: ${status.enabled ? "habilitado" : "deshabilitado"}`)
+  console.log(`Proveedor: ${status.provider || "desconocido"}`)
+  console.log(`Modo: ${status.mode}`)
+  console.log(`Comando: ${status.command}`)
+  console.log(`Config sincronizada: ${status.matchesConfig ? "sí" : "no"}`)
+}
+
 async function uninstallShellCommand() {
   const result = removeWindowsShellIntegration()
   if (result.removed) {
@@ -284,6 +356,7 @@ async function uninstallShellCommand() {
 
 async function uninstallCommand() {
   await stopCommand()
+  await disableAutostart()
   if (canManageWindowsShell()) removeWindowsShellIntegration()
   const config = readConfig()
   const removedProvider = removeOpenCodeProvider(config.providerId)
@@ -308,6 +381,10 @@ Comandos:
   open-path <ruta>
   open-with <desktop|cli> <ruta>
   install-shell
+  enable-autostart
+  disable-autostart
+  autostart-status
+  autostart <enable|disable|status>
   uninstall-shell
   status
   doctor
