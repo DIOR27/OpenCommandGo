@@ -250,8 +250,10 @@ async function doctorCommand() {
 async function refreshModelsCommand(args = []) {
   const options = parseRefreshModelsArgs(args)
   console.log("Refrescando catálogo y compatibilidad de modelos...")
+  const shouldProbe = await resolveRefreshProbeConsent(options)
   const matrix = await refreshModelCatalogNow({
-    probeMode: options.full ? "full" : "fast",
+    probeMode: shouldProbe ? (options.full ? "full" : "fast") : "catalog",
+    verifyAvailability: shouldProbe,
     concurrency: options.concurrency,
     onProgress(event) {
       if (event.type === "catalog") {
@@ -277,6 +279,8 @@ function parseRefreshModelsArgs(args) {
   const values = Array.isArray(args) ? args : []
   let full = false
   let concurrency = undefined
+  let yes = false
+  let probe = false
 
   for (let index = 0; index < values.length; index += 1) {
     const value = String(values[index] || "").trim()
@@ -284,6 +288,17 @@ function parseRefreshModelsArgs(args) {
 
     if (value === "--full") {
       full = true
+      probe = true
+      continue
+    }
+
+    if (value === "--yes") {
+      yes = true
+      continue
+    }
+
+    if (value === "--probe" || value === "--verify") {
+      probe = true
       continue
     }
 
@@ -306,7 +321,21 @@ function parseRefreshModelsArgs(args) {
     }
   }
 
-  return { full, concurrency }
+  return { full, concurrency, yes, probe }
+}
+
+async function resolveRefreshProbeConsent(options) {
+  if (!options?.probe) return false
+  if (options.yes) return true
+
+  const rl = createInterface({ input: stdin, output: stdout })
+  try {
+    console.log("Advertencia: verificar disponibilidad real consumirá tokens/créditos en Command Code.")
+    const answer = await rl.question("¿Querés continuar con los probes? [y/N]: ")
+    return normalizeYesNo(answer, false)
+  } finally {
+    rl.close()
+  }
 }
 
 async function stopCommand() {
@@ -439,7 +468,7 @@ Comandos:
   uninstall-shell
   status
   doctor
-  refresh-models [--full] [--parallel N]
+  refresh-models [--probe|--full] [--parallel N] [--yes]
   set-api-key
   reset-shell-choice
   uninstall`)

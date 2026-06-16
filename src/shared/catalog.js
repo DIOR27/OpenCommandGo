@@ -47,6 +47,14 @@ export function fallbackCatalog() {
         supported: null,
         source: null,
       },
+      audio: {
+        supported: null,
+        source: null,
+      },
+      video: {
+        supported: null,
+        source: null,
+      },
     },
   }))
 }
@@ -85,6 +93,8 @@ export function deriveCatalogFromCompatibility(compatibilityMatrix) {
       catalog_capabilities: {
         vision: normalizeStoredVisionCapability(info),
         pdf: normalizeStoredPdfCapability(info),
+        audio: normalizeStoredGenericCapability(info, "audio"),
+        video: normalizeStoredGenericCapability(info, "video"),
       },
     }))
   return entries.length > 0 ? entries : fallbackCatalog()
@@ -93,7 +103,9 @@ export function deriveCatalogFromCompatibility(compatibilityMatrix) {
 function inferCatalogCapabilities(raw, modelId = "") {
   const vision = inferCatalogVisionCapability(raw)
   const pdf = inferCatalogPdfCapability(raw)
-  return applyKnownCapabilityHints(modelId, { vision, pdf })
+  const audio = inferCatalogMediaCapability(raw, "audio")
+  const video = inferCatalogMediaCapability(raw, "video")
+  return applyKnownCapabilityHints(modelId, { vision, pdf, audio, video })
 }
 
 function inferCatalogVisionCapability(raw) {
@@ -207,11 +219,63 @@ function inferCatalogPdfCapability(raw) {
   }
 }
 
+function inferCatalogMediaCapability(raw, kind) {
+  const supportKeys = kind === "audio"
+    ? [raw.supports_audio, raw.supportsAudio]
+    : [raw.supports_video, raw.supportsVideo]
+  const direct = firstBoolean(...supportKeys)
+  if (direct !== null) {
+    return {
+      supported: direct,
+      source: `catalog.supports_${kind}`,
+    }
+  }
+
+  const capabilities = isRecord(raw.capabilities) ? raw.capabilities : null
+  const fromCapabilities = firstBoolean(capabilities?.[kind])
+  if (fromCapabilities !== null) {
+    return {
+      supported: fromCapabilities,
+      source: `catalog.capabilities.${kind}`,
+    }
+  }
+
+  const inputModalities = firstArray(
+    raw.input_modalities,
+    raw.inputModalities,
+    capabilities?.input_modalities,
+    capabilities?.inputModalities,
+    raw.modalities,
+  )
+  const normalizedModalities = normalizeStringArray(inputModalities)
+  if (normalizedModalities.length > 0) {
+    return {
+      supported: normalizedModalities.includes(kind),
+      source: "catalog.modalities",
+    }
+  }
+
+  const tags = normalizeStringArray(raw.tags)
+  if (tags.includes(kind)) {
+    return {
+      supported: true,
+      source: "catalog.tags",
+    }
+  }
+
+  return {
+    supported: null,
+    source: null,
+  }
+}
+
 function applyKnownCapabilityHints(modelId, capabilities) {
   const normalized = comparableCommandCodeModel(modelId)
   const next = {
     vision: { ...(capabilities?.vision || { supported: null, source: null }) },
     pdf: { ...(capabilities?.pdf || { supported: null, source: null }) },
+    audio: { ...(capabilities?.audio || { supported: null, source: null }) },
+    video: { ...(capabilities?.video || { supported: null, source: null }) },
   }
 
   if (normalized === "moonshotai/kimi-k2-5" || normalized === "moonshotai/kimi-k2-6") {
@@ -275,6 +339,26 @@ function normalizeStoredPdfCapability(info) {
     return {
       supported: firstBoolean(pdf.supported),
       source: firstString(pdf.source) || null,
+    }
+  }
+
+  return {
+    supported: null,
+    source: null,
+  }
+}
+
+function normalizeStoredGenericCapability(info, key) {
+  if (!info || typeof info !== "object") {
+    return { supported: null, source: null }
+  }
+
+  const capabilities = isRecord(info.capabilities) ? info.capabilities : null
+  const entry = isRecord(capabilities?.[key]) ? capabilities[key] : null
+  if (entry) {
+    return {
+      supported: firstBoolean(entry.supported),
+      source: firstString(entry.source) || null,
     }
   }
 

@@ -9,6 +9,7 @@ import { clearPid, getRuntimeSettings, readCompatibilityMatrix, writeCompatibili
 import { syncOpenCodeConfig } from "../opencode/config.js"
 import { MODELS, MODEL_SET } from "../shared/models.js"
 import { deriveCatalogFromCompatibility, extractModelRows, fallbackCatalog, normalizeCatalogRows } from "../shared/catalog.js"
+import { normalizeCommandCodeReasoningEffort } from "../shared/commandcode-thinking.js"
 import { resolveContextWindow } from "../shared/context-windows.js"
 
 const IMAGE_TEST_URL = "https://upload.wikimedia.org/wikipedia/commons/thumb/3/3a/Cat03.jpg/320px-Cat03.jpg"
@@ -26,7 +27,8 @@ export async function refreshModelCatalogNow(options = {}) {
   const refreshMs = settings.compatibilityRefreshHours * 60 * 60 * 1000
   return await maybeRefreshCompatibility("manual", refreshMs, settings, {
     force: true,
-    probeMode: options.probeMode || "full",
+    probeMode: options.probeMode || "catalog",
+    verifyAvailability: options.verifyAvailability === true,
     concurrency: options.concurrency,
     onProgress: typeof options.onProgress === "function" ? options.onProgress : null,
   })
@@ -200,6 +202,7 @@ function buildCommandCodePayload(body, model, sessionId) {
   const tools = Array.isArray(body.tools) && body.tools.length > 0
     ? toCommandCodeTools(body.tools)
     : []
+  const reasoningEffort = resolveReasoningEffort(body)
 
   return {
     mode: "custom-agent",
@@ -212,6 +215,7 @@ function buildCommandCodePayload(body, model, sessionId) {
       max_tokens: typeof body.max_tokens === "number" ? body.max_tokens : 8192,
       temperature: typeof body.temperature === "number" ? body.temperature : undefined,
       messages,
+      ...(reasoningEffort ? { reasoning_effort: reasoningEffort } : {}),
       ...(tools.length > 0 ? { tools } : {}),
       ...(systemTextFromMessages(body.messages) ? { system: systemTextFromMessages(body.messages) } : {}),
     },
@@ -902,8 +906,40 @@ async function maybeRefreshCompatibility(reason, refreshMs, settings, options = 
       refresh_interval_hours: settings.compatibilityRefreshHours,
       models: {},
     }
-    const probeMode = options.probeMode === "fast" ? "fast" : "full"
+    const verifyAvailability = options.verifyAvailability === true
+    const probeMode = options.probeMode === "full"
+      ? "full"
+      : options.probeMode === "fast"
+        ? "fast"
+        : "catalog"
     const concurrency = resolveRefreshConcurrency(options.concurrency, probeMode, catalog.length)
+
+    if (!verifyAvailability || probeMode === "catalog") {
+      for (const row of catalog) {
+        const { id, name, context_length, catalog_capabilities } = row
+        const previous = compatibilityMatrix?.models?.[id]
+        next.models[id] = buildCatalogOnlyCompatibilityEntry({
+          id,
+          name,
+          context_length,
+          catalogCapabilities: catalog_capabilities,
+          previous,
+        })
+      }
+
+      compatibilityMatrix = next
+      availableCatalog = deriveCatalogFromCompatibility(compatibilityMatrix)
+      writeCompatibilityMatrix(compatibilityMatrix)
+      syncOpenCodeConfig({
+        providerId: settings.providerId,
+        host: settings.host,
+        port: settings.port,
+        compatibilityMatrix,
+      })
+      log(`COMPAT refresh_done models=${Object.keys(next.models).length} mode=catalog`)
+      return compatibilityMatrix
+    }
+
     let nextIndex = 0
 
     const runOne = async rowIndex => {
@@ -1029,6 +1065,8 @@ async function testModelCompatibility(model, displayName, settings, options = {}
         source: catalogVision.source,
       },
       pdf: normalizeCatalogFileCapability(options.catalogCapabilities?.pdf),
+      audio: normalizeCatalogFileCapability(options.catalogCapabilities?.audio),
+      video: normalizeCatalogFileCapability(options.catalogCapabilities?.video),
     },
     notes: [],
   }
@@ -1171,10 +1209,40 @@ async function testModelCompatibility(model, displayName, settings, options = {}
 }
 
 function resolveRefreshConcurrency(value, probeMode, modelCount) {
+  if (probeMode === "catalog") {
+    return 1
+  }
   const fallback = probeMode === "full" ? 2 : 4
   const parsed = Number(value)
   const normalized = Number.isInteger(parsed) && parsed > 0 ? parsed : fallback
   return Math.max(1, Math.min(normalized, Math.max(1, modelCount)))
+}
+
+function buildCatalogOnlyCompatibilityEntry({ id, name, context_length, catalogCapabilities, previous }) {
+  const contextWindow = resolveContextWindow(id, context_length)
+  return {
+    name,
+    tested_at: previous?.tested_at || null,
+    status: "catalog_only",
+    text: previous?.text || { ok: null, output_chars: 0 },
+    image: {
+      ok: typeof catalogCapabilities?.vision?.supported === "boolean"
+        ? catalogCapabilities.vision.supported
+        : previous?.image?.ok ?? null,
+      output_chars: previous?.image?.output_chars || 0,
+      source: catalogCapabilities?.vision?.source || previous?.image?.source || null,
+    },
+    reasoning: previous?.reasoning || { ok: null, chars: 0 },
+    tools: previous?.tools || { ok: null, calls: 0 },
+    capabilities: mergeCapabilities(previous?.capabilities, {
+      vision: normalizeCatalogVisionCapability(catalogCapabilities?.vision),
+      pdf: normalizeCatalogFileCapability(catalogCapabilities?.pdf),
+      audio: normalizeCatalogFileCapability(catalogCapabilities?.audio),
+      video: normalizeCatalogFileCapability(catalogCapabilities?.video),
+    }),
+    notes: ["Catálogo sincronizado sin probes de disponibilidad."],
+    context_length: contextWindow,
+  }
 }
 
 function normalizeCatalogVisionCapability(vision) {
@@ -1210,6 +1278,14 @@ function mergeCapabilities(previous, next) {
     pdf: {
       ...(prev.pdf && typeof prev.pdf === "object" ? prev.pdf : {}),
       ...(current.pdf && typeof current.pdf === "object" ? current.pdf : {}),
+    },
+    audio: {
+      ...(prev.audio && typeof prev.audio === "object" ? prev.audio : {}),
+      ...(current.audio && typeof current.audio === "object" ? current.audio : {}),
+    },
+    video: {
+      ...(prev.video && typeof prev.video === "object" ? prev.video : {}),
+      ...(current.video && typeof current.video === "object" ? current.video : {}),
     },
   }
 }
@@ -1376,7 +1452,7 @@ function isLoopbackHost(host) {
 
 function buildModelDescriptor(model, compat) {
   const contextWindow = resolveContextWindow(model.id, model.context_length)
-  const supportsVision = supportsVisionInput(compat)
+  const inputModalities = resolveInputModalities(compat)
   return {
     id: model.id,
     object: "model",
@@ -1389,21 +1465,38 @@ function buildModelDescriptor(model, compat) {
       output: 32768,
     },
     modalities: {
-      input: supportsVision ? ["text", "image"] : ["text"],
+      input: inputModalities,
       output: ["text"],
     },
     capabilities: {
       vision: {
-        supported: supportsVision,
+        supported: inputModalities.includes("image"),
         source: resolveVisionSource(compat),
       },
       pdf: {
         supported: supportsPdfHint(compat),
         source: resolvePdfSource(compat),
       },
+      audio: {
+        supported: supportsGenericCapability(compat, "audio"),
+        source: resolveGenericCapabilitySource(compat, "audio"),
+      },
+      video: {
+        supported: supportsGenericCapability(compat, "video"),
+        source: resolveGenericCapabilitySource(compat, "video"),
+      },
     },
     status: compat?.status || "unknown",
   }
+}
+
+function resolveInputModalities(compat) {
+  const input = ["text"]
+  if (supportsVisionInput(compat)) input.push("image")
+  if (supportsPdfHint(compat) === true) input.push("pdf")
+  if (supportsGenericCapability(compat, "audio") === true) input.push("audio")
+  if (supportsGenericCapability(compat, "video") === true) input.push("video")
+  return input
 }
 
 function supportsVisionInput(compat) {
@@ -1428,4 +1521,30 @@ function supportsPdfHint(compat) {
 function resolvePdfSource(compat) {
   const source = compat?.capabilities?.pdf?.source
   return typeof source === "string" && source.trim() ? source.trim() : null
+}
+
+function supportsGenericCapability(compat, key) {
+  const supported = compat?.capabilities?.[key]?.supported
+  return typeof supported === "boolean" ? supported : null
+}
+
+function resolveGenericCapabilitySource(compat, key) {
+  const source = compat?.capabilities?.[key]?.source
+  return typeof source === "string" && source.trim() ? source.trim() : null
+}
+
+function resolveReasoningEffort(body) {
+  const direct = normalizeCommandCodeReasoningEffort(body?.reasoning_effort)
+  if (direct) return direct
+
+  const nestedReasoning = normalizeCommandCodeReasoningEffort(body?.reasoning?.effort)
+  if (nestedReasoning) return nestedReasoning
+
+  const thinkingLevel = normalizeCommandCodeReasoningEffort(body?.thinkingLevel)
+  if (thinkingLevel) return thinkingLevel
+
+  const nestedThinkingLevel = normalizeCommandCodeReasoningEffort(body?.thinking?.thinkingLevel)
+  if (nestedThinkingLevel) return nestedThinkingLevel
+
+  return null
 }

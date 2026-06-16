@@ -41,9 +41,10 @@ ccga autostart status
 ccga status
 ccga doctor
 ccga refresh-models
+ccga refresh-models --probe
 ccga refresh-models --full
 ccga refresh-models --parallel 6
-ccga refresh-models --full --parallel 2
+ccga refresh-models --full --parallel 2 --yes
 ccga set-api-key
 ccga open-path "C:\\path\\to\\folder"
 ccga open-with desktop "C:\\path\\to\\folder"
@@ -132,14 +133,15 @@ ccga refresh-models
 
 Available modes:
 
-- `ccga refresh-models` → fast probe, now in parallel by default
-- `ccga refresh-models --full` → complete probe (text + image + reasoning + tools)
+- `ccga refresh-models` → solo sincroniza catálogo, sin gastar créditos
+- `ccga refresh-models --probe` → valida disponibilidad real y puede consumir créditos
+- `ccga refresh-models --full` → probe completo (text + image + reasoning + tools)
 - `ccga refresh-models --parallel 6` → override the worker count
 
 Recommended:
 
-- Fast/manual refresh: `ccga refresh-models`
-- Deep validation when you want to audit the matrix: `ccga refresh-models --full --parallel 2`
+- Safe/manual refresh: `ccga refresh-models`
+- Deep validation when you want to audit the matrix: `ccga refresh-models --full --parallel 2 --yes`
 
 ## Security
 
