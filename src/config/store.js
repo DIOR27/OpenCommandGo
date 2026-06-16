@@ -101,15 +101,15 @@ export function getRuntimeSettings() {
     ) || ""
 
   return {
-    host: firstNonEmpty(process.env.SHIM_HOST, process.env.CC_GO_SHIM_HOST, config.host) || DEFAULT_CONFIG.host,
+    host: firstNonEmpty(process.env.OCG_HOST, process.env.SHIM_HOST, process.env.CC_GO_SHIM_HOST, config.host) || DEFAULT_CONFIG.host,
     port: Number(firstNonEmpty(process.env.SHIM_PORT, process.env.CC_GO_SHIM_PORT, String(config.port || DEFAULT_CONFIG.port))),
     commandCodeApiKey: apiKey,
-    shimAccessToken: firstNonEmpty(process.env.COMMANDCODE_SHIM_TOKEN, secrets.shimAccessToken) || "",
+    shimAccessToken: firstNonEmpty(process.env.OCG_TOKEN, process.env.COMMANDCODE_SHIM_TOKEN, secrets.shimAccessToken) || "",
     commandCodeBaseUrl: String(firstNonEmpty(process.env.COMMANDCODE_BASE_URL, config.commandCodeBaseUrl) || DEFAULT_CONFIG.commandCodeBaseUrl).replace(/\/+$/, ""),
     commandCodeVersion: firstNonEmpty(process.env.COMMANDCODE_VERSION, process.env.COMMAND_CODE_CLI_VERSION, config.commandCodeVersion) || DEFAULT_CONFIG.commandCodeVersion,
     compatibilityRefreshHours: Number(config.compatibilityRefreshHours || DEFAULT_CONFIG.compatibilityRefreshHours),
     providerId: config.providerId || DEFAULT_CONFIG.providerId,
-    allowRemoteHost: isEnabled(process.env.COMMANDCODE_SHIM_ALLOW_REMOTE) || isEnabled(process.env.CC_GO_SHIM_ALLOW_REMOTE),
+    allowRemoteHost: isEnabled(process.env.OCG_ALLOW_REMOTE) || isEnabled(process.env.COMMANDCODE_SHIM_ALLOW_REMOTE) || isEnabled(process.env.CC_GO_SHIM_ALLOW_REMOTE),
   }
 }
 

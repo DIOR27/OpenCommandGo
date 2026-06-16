@@ -180,6 +180,19 @@ async function setApiKey() {
 
 async function startCommand(args) {
   const background = args.includes("--background")
+
+  // Refresh catalog before starting (catalog-only, no probes)
+  console.log("Refrescando catálogo de modelos...")
+  try {
+    await refreshModelCatalogNow({
+      probeMode: "catalog",
+      verifyAvailability: false,
+    })
+    console.log("Catálogo actualizado.")
+  } catch (error) {
+    console.log("Advertencia: no se pudo actualizar el catálogo, iniciando de todos modos.")
+  }
+
   if (!background) {
     await startServer()
     return
@@ -191,7 +204,7 @@ async function startCommand(args) {
     return
   }
 
-  const entry = fileURLToPath(new URL("../../bin/commandcode-shim.js", import.meta.url))
+  const entry = fileURLToPath(new URL("../../bin/ocg.js", import.meta.url))
   const child = spawn(process.execPath, [entry, "serve"], {
     detached: true,
     stdio: "ignore",
@@ -371,7 +384,7 @@ async function openWithCommand(args) {
   const [target, ...pathParts] = args
   const targetPath = pathParts.join(" ").trim()
   if (!target || !targetPath) {
-    console.log("Uso: ccga open-with <desktop|cli> <ruta>")
+    console.log("Uso: ocg open-with <desktop|cli> <ruta>")
     return
   }
   await launchSpecificOpenCodeTarget(target, targetPath, ensureShimRunning)
@@ -399,7 +412,7 @@ async function autostartCommand(args) {
       await autostartStatusCommand()
       return
     default:
-      console.log("Uso: ccga autostart <enable|disable|status>")
+      console.log("Uso: ocg autostart <enable|disable|status>")
   }
 }
 
@@ -407,7 +420,7 @@ async function enableAutostartCommand(options = {}) {
   const result = await enableAutostart()
   if (!options.silentPrefix) console.log("Inicio automático habilitado.")
   console.log(`Proveedor: ${result.provider}`)
-  console.log("Comando: ccga start --background")
+  console.log("Comando: ocg start --background")
 }
 
 async function disableAutostartCommand() {
@@ -451,7 +464,7 @@ async function uninstallCommand() {
 }
 
 function printHelp() {
-  console.log(`ccga
+  console.log(`ocg
 
 Comandos:
   setup
@@ -534,6 +547,6 @@ function isProcessAlive(pid) {
 
 function getShimHeaders(token) {
   return {
-    "X-CommandCode-Shim-Token": token,
+    "x-ocg-token": token,
   }
 }

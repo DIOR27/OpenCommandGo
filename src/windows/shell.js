@@ -4,7 +4,7 @@ import { execFileSync, spawn } from "node:child_process"
 import { readConfig, writeConfig } from "../config/store.js"
 import { detectOpenCodeInstallations } from "../opencode/config.js"
 
-const ROOT_VERB = "CommandCodeShimOpenCode"
+const ROOT_VERB = "OpenCGCLI"
 const SHELL_KEY = `HKCU\\Software\\Classes\\Directory\\shell\\${ROOT_VERB}`
 const SHELL_BG_KEY = `HKCU\\Software\\Classes\\Directory\\Background\\shell\\${ROOT_VERB}`
 const COMMAND_STORE_KEY = "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\CommandStore\\shell"
@@ -124,7 +124,7 @@ function launchTarget(target, executable, targetPath) {
 
 function resolveShellCommand() {
   try {
-    const output = execFileSync("where", ["commandcode-shim"], {
+    const output = execFileSync("where", ["ocg"], {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"],
     }).split(/\r?\n/).map(line => line.trim()).filter(Boolean)

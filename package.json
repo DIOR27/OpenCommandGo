@@ -1,12 +1,12 @@
 {
-  "name": "commandcode-go-around",
+  "name": "opencommandgo",
   "version": "0.1.0",
   "type": "module",
-  "description": "CLI shim to use Command Code Go models from OpenCode through a local OpenAI-compatible bridge",
+  "description": "CLI shim to use Command Code models from OpenCode through a local OpenAI-compatible bridge",
   "bin": {
-    "ccga": "./bin/commandcode-shim.js",
-    "commandcode-go-around": "./bin/commandcode-shim.js",
-    "commandcode-shim": "./bin/commandcode-shim.js"
+    "ocg": "./bin/ocg.js",
+    "opencommandgo": "./bin/ocg.js",
+    "opencg": "./bin/ocg.js"
   },
   "files": [
     "bin",
@@ -15,7 +15,7 @@
     "README.md"
   ],
   "scripts": {
-    "start": "node ./bin/commandcode-shim.js serve",
+    "start": "node ./bin/ocg.js serve",
     "pack:dry-run": "npm pack --dry-run"
   },
   "publishConfig": {
@@ -30,6 +30,7 @@
     "opencode",
     "openai-compatible",
     "shim",
-    "cli"
+    "cli",
+    "opencommandgo"
   ]
 }

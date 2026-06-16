@@ -86,7 +86,7 @@ function hasSystemdUser() {
 
 function buildSystemdUnit(registration) {
   return `[Unit]
-Description=CommandCode Go Shim
+Description=OpenCG CLI
 
 [Service]
 Type=simple
@@ -103,8 +103,8 @@ function buildDesktopFile(registration) {
   return `[Desktop Entry]
 Type=Application
 Version=1.0
-Name=CommandCode Go Shim
-Comment=Starts the CommandCode local shim in background mode
+Name=OpenCG CLI
+Comment=Starts the OpenCG CLI in background mode
 Exec=${registration.command}
 Terminal=false
 X-GNOME-Autostart-enabled=true

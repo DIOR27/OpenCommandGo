@@ -7,11 +7,11 @@ import { disableLinuxAutostart, enableLinuxAutostart, getLinuxAutostartStatus } 
 import { disableMacAutostart, enableMacAutostart, getMacAutostartStatus } from "./macos.js"
 import { disableWindowsAutostart, enableWindowsAutostart, getWindowsAutostartStatus } from "./windows.js"
 
-const APP_LABEL = "commandcode-go-shim"
-const TASK_NAME = "CommandCode Shim"
-const MACOS_PLIST_LABEL = "ai.commandcode.go.shim"
-const LINUX_SYSTEMD_UNIT = "commandcode-go-shim.service"
-const LINUX_DESKTOP_FILE = "commandcode-go-shim.desktop"
+const APP_LABEL = "opencg-cli"
+const TASK_NAME = "OpenCG CLI"
+const MACOS_PLIST_LABEL = "ai.opencg.cli"
+const LINUX_SYSTEMD_UNIT = "opencg-cli.service"
+const LINUX_DESKTOP_FILE = "opencg-cli.desktop"
 
 export async function enableAutostart() {
   const registration = resolveRegistration()
@@ -104,14 +104,14 @@ function resolveLauncher() {
   const candidates =
     process.platform === "win32"
       ? [
-          ...resolveFromWhere("ccga"),
-          ...resolveFromWhere("commandcode-shim"),
-          ...resolveFromWhere("commandcode-go-around"),
+          ...resolveFromWhere("ocg"),
+          ...resolveFromWhere("opencg"),
+          ...resolveFromWhere("opencommandgo"),
         ]
       : [
-          ...resolveFromShell("ccga"),
-          ...resolveFromShell("commandcode-shim"),
-          ...resolveFromShell("commandcode-go-around"),
+          ...resolveFromShell("ocg"),
+          ...resolveFromShell("opencg"),
+          ...resolveFromShell("opencommandgo"),
         ]
 
   const chosen = chooseBestLauncher(candidates)

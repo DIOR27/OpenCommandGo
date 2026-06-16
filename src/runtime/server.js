@@ -65,7 +65,7 @@ export async function startServer() {
         if (!requireShimAuth(req, res, settings)) return
         return json(res, 200, {
           ok: true,
-          provider: "commandcode-go-shim",
+          provider: "opencg-cli",
           host: settings.host,
           port: settings.port,
           models: availableCatalog.map(({ id, name }) => ({ id, name })),
@@ -89,7 +89,7 @@ export async function startServer() {
       if (req.method === "POST" && url.pathname === "/v1/chat/completions") {
         if (!requireShimAuth(req, res, settings)) return
         if (!settings.commandCodeApiKey) {
-          return json(res, 500, openAIError("missing_api_key", `Falta API key. Corré: ccga setup o ccga set-api-key`))
+          return json(res, 500, openAIError("missing_api_key", `Falta API key. Corré: ocg setup o ocg set-api-key`))
         }
 
         const body = await readJson(req)
@@ -137,7 +137,7 @@ export async function startServer() {
   })
 
   log(`LISTEN http://${settings.host}:${settings.port}`)
-  console.log(`commandcode-go-shim listening on http://${settings.host}:${settings.port}`)
+  console.log(`opencg-cli listening on http://${settings.host}:${settings.port}`)
   scheduleCompatibilityRefresh(refreshMs, settings)
   return server
 }
@@ -234,7 +234,7 @@ function fetchCommandCodeAlpha(payload, sessionId, settings, options = {}) {
       "x-cli-environment": "production",
       "x-command-code-version": settings.commandCodeVersion,
       "x-co-flag": "false",
-      "x-project-slug": "opencode-commandcode-go-shim",
+      "x-project-slug": "opencode-opencg-cli",
       "x-session-id": sessionId,
       "x-taste-learning": "false",
     },
@@ -550,7 +550,7 @@ function buildOpenAICompletion(model, upstream) {
     ],
     usage,
     _meta: {
-      shim: "commandcode-go-shim",
+      shim: "opencg-cli",
       duration_ms: upstream.durationMs,
       session_id: upstream.sessionId,
     },
@@ -1433,7 +1433,7 @@ function requireShimAuth(req, res, settings) {
 }
 
 function getRequestShimToken(req) {
-  const direct = req.headers["x-commandcode-shim-token"]
+  const direct = req.headers["x-ocg-token"]
   if (typeof direct === "string" && direct.trim()) return direct.trim()
 
   const authorization = req.headers.authorization
@@ -1457,7 +1457,7 @@ function buildModelDescriptor(model, compat) {
     id: model.id,
     object: "model",
     created: 0,
-    owned_by: "commandcode-go-shim",
+    owned_by: "opencg-cli",
     name: model.name,
     context_length: contextWindow,
     limit: {

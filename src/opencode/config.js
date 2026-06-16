@@ -25,11 +25,11 @@ export function syncOpenCodeConfig({ providerId, host, port, compatibilityMatrix
   config.provider ||= {}
   config.provider[providerId] = {
     npm: "@ai-sdk/openai-compatible",
-    name: "Command Code Shim",
+    name: "OpenCG CLI",
     options: {
       baseURL: `http://${host}:${port}/v1`,
       headers: {
-        "X-CommandCode-Shim-Token": secrets.shimAccessToken,
+        "x-ocg-token": secrets.shimAccessToken,
       },
     },
     models: buildModelConfig(compatibilityMatrix),

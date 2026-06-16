@@ -1,18 +1,18 @@
-# commandcode-go-around
+# OpenCommandGo
 
-Public CLI to use Command Code Go models from OpenCode via a local OpenAI-compatible shim.
+CLI shim to use Command Code models from OpenCode through a local OpenAI-compatible bridge.
 
-Main short binary:
+**Binary:** `ocg`
 
-- `ccga`
+**Aliases:** `opencommandgo`, `opencg`
 
 ## What it does
 
-- Launches a local shim on `127.0.0.1`
+- Launches a local shim server on `127.0.0.1`
 - Synchronizes a custom provider in OpenCode
-- Maintains a dynamic catalog of useful models
+- Maintains a dynamic catalog of available models
 - Protects the shim with an internal local token
-- Includes setup, diagnostics, refresh, and runtime control commands
+- Includes setup, diagnostics, catalog refresh, and runtime control commands
 
 ## Installation
 
@@ -23,63 +23,53 @@ npm install -g .
 ## First use
 
 ```powershell
-ccga setup
-ccga start --background
+ocg setup
+ocg start --background
 ```
 
 ## Commands
 
 ```powershell
-ccga setup
-ccga start
-ccga start --background
-ccga serve
-ccga stop
-ccga autostart enable
-ccga autostart disable
-ccga autostart status
-ccga status
-ccga doctor
-ccga refresh-models
-ccga refresh-models --probe
-ccga refresh-models --full
-ccga refresh-models --parallel 6
-ccga refresh-models --full --parallel 2 --yes
-ccga set-api-key
-ccga open-path "C:\\path\\to\\folder"
-ccga open-with desktop "C:\\path\\to\\folder"
-ccga open-with cli "C:\\path\\to\\folder"
-ccga install-shell
-ccga uninstall-shell
-ccga reset-shell-choice
-ccga uninstall
+ocg setup
+ocg start
+ocg start --background
+ocg serve
+ocg stop
+ocg autostart enable
+ocg autostart disable
+ocg autostart status
+ocg status
+ocg doctor
+ocg refresh-models
+ocg refresh-models --probe
+ocg refresh-models --full
+ocg refresh-models --parallel 6
+ocg refresh-models --full --parallel 2 --yes
+ocg set-api-key
+ocg open-path "C:\\path\\to\\folder"
+ocg open-with desktop "C:\\path\\to\\folder"
+ocg open-with cli "C:\\path\\to\\folder"
+ocg install-shell
+ocg uninstall-shell
+ocg reset-shell-choice
+ocg uninstall
 ```
-
-Compatibility:
-
-```powershell
-ccga ...
-commandcode-shim ...
-commandcode-go-around ...
-```
-
-also continue working as aliases of the binary.
 
 ## Local Configuration
 
 ### Windows
 
-- `%APPDATA%\\commandcode-go-shim\\config.json`
-- `%APPDATA%\\commandcode-go-shim\\secrets.json`
-- `%APPDATA%\\commandcode-go-shim\\compatibility.json`
+- `%APPDATA%\opencg-cli\config.json`
+- `%APPDATA%\opencg-cli\secrets.json`
+- `%APPDATA%\opencg-cli\compatibility.json`
 
 ### macOS
 
-- `~/Library/Application Support/commandcode-go-shim/`
+- `~/Library/Application Support/opencg-cli/`
 
 ### Linux
 
-- `${XDG_CONFIG_HOME:-~/.config}/commandcode-go-shim/`
+- `${XDG_CONFIG_HOME:-~/.config}/opencg-cli/`
 
 ## OpenCode
 
@@ -89,99 +79,88 @@ The setup/sync updates:
 
 Provider:
 
-- `cmdshim`
+- `opencg-cli`
 
 Base URL:
 
 - `http://127.0.0.1:4310/v1`
 
-The shim also writes an internal header so that OpenCode is the only valid client of the local provider.
+The shim writes an internal header so that OpenCode is the only valid client of the local provider.
 
 ## Autostart
 
-You can register the shim to start automatically for your user session:
+Register the shim to launch automatically in your user session:
 
 ```powershell
-ccga autostart enable
-ccga autostart status
-ccga autostart disable
+ocg autostart enable
+ocg autostart status
+ocg autostart disable
 ```
 
-Platform provider used by the CLI:
+Platform support:
 
-- Windows: Startup folder (`shell:startup`)
-- macOS: LaunchAgent
-- Linux: user systemd service, with XDG autostart fallback
+- **Windows:** Startup folder (`shell:startup`)
+- **macOS:** LaunchAgent
+- **Linux:** User systemd service, with XDG autostart fallback
 
 ## Models
 
-The catalog is not static.
+The catalog is dynamically built at runtime. Each `ocg start` refreshes the catalog automatically before launching the server.
 
-The runtime:
+During a refresh the CLI:
 
 - Queries `https://api.commandcode.ai/provider/v1/models`
 - Filters compatible candidates
 - Tests compatibility conservatively
-- Avoids pruning the catalog due to transient quota/credit errors
+- Avoids pruning the catalog due to transient quota or credit errors
 - Resynchronizes visible models in OpenCode
 
-To force an update:
+To force an update manually:
 
 ```powershell
-ccga refresh-models
+ocg refresh-models
 ```
 
 Available modes:
 
-- `ccga refresh-models` → solo sincroniza catálogo, sin gastar créditos
-- `ccga refresh-models --probe` → valida disponibilidad real y puede consumir créditos
-- `ccga refresh-models --full` → probe completo (text + image + reasoning + tools)
-- `ccga refresh-models --parallel 6` → override the worker count
+- `ocg refresh-models` — syncs the catalog without consuming credits
+- `ocg refresh-models --probe` — validates real availability (may consume credits)
+- `ocg refresh-models --full` — probes text, image, reasoning, and tools
+- `ocg refresh-models --parallel 6` — override the worker count
 
 Recommended:
 
-- Safe/manual refresh: `ccga refresh-models`
-- Deep validation when you want to audit the matrix: `ccga refresh-models --full --parallel 2 --yes`
+- **Safe/manual refresh:** `ocg refresh-models`
+- **Deep audit:** `ocg refresh-models --full --parallel 2 --yes`
 
 ## Security
 
 - Local loopback by default (`127.0.0.1`)
 - Mandatory internal token between OpenCode and the shim
 - No open CORS
-- Upstream timeout
-- Stricter body limit
+- Upstream timeout enforcement
+- Stricter body size limits
 
 ## Current Limitations
 
-- Windows shell integration is included as a command, but may require additional iteration depending on the Explorer version
-- Thinking/reasoning levels per model are not made up; they will only be exposed when a real mapping exists
+- Windows shell integration is included but may need further iteration depending on the Explorer version
+- Thinking/reasoning levels per model are not synthesized; they only appear when a real mapping is available
 - Depends on Command Code endpoints which may change
 
 ## Local Development
 
-Within the project:
+Within the project directory:
 
 ```powershell
 npm start
 ```
 
-Dry-run packaging:
+Dry-run packaging to inspect the published bundle:
 
 ```powershell
 npm run pack:dry-run
 ```
 
-## Publishing
+## License
 
-The package is prepared for public publication on npm with:
-
-- Name `commandcode-go-around`
-- Main binary `commandcode-go-around`
-- Alias `commandcode-shim`
-- `publishConfig.access=public`
-
-## License Note
-
-The current `package.json` is set to `UNLICENSED`.
-
-Before publishing definitively, change this field if you want to grant usage/redistribution permissions.
+MIT
