@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs"
 import { join } from "node:path"
-import { execFileSync, spawn } from "node:child_process"
+import { execFileSync } from "node:child_process"
 import { readConfig, writeConfig } from "../config/store.js"
 import { detectOpenCodeInstallations } from "../opencode/config.js"
 
@@ -64,81 +64,11 @@ export function removeWindowsShellIntegration() {
   return { removed: true }
 }
 
-export async function chooseAndLaunchOpenCode(targetPath, ensureShimRunning) {
-  const detected = detectOpenCodeInstallations()
-  const availableTargets = {
-    desktop: detected.desktop && existsSync(detected.desktop) ? detected.desktop : null,
-    cli: detected.cli && existsSync(detected.cli) ? detected.cli : null,
-  }
-
-  if (!availableTargets.desktop && !availableTargets.cli) {
-    throw new Error("No detecté OpenCode Desktop ni OpenCode CLI instalados.")
-  }
-
-  await ensureShimRunning()
-
-  const selected =
-    availableTargets.desktop && !availableTargets.cli ? "desktop"
-      : !availableTargets.desktop && availableTargets.cli ? "cli"
-        : null
-
-  if (!selected) {
-    throw new Error("Hay múltiples destinos disponibles. Usá el submenú Desktop/CLI del Explorador.")
-  }
-
-  launchTarget(selected, availableTargets[selected], targetPath)
-}
-
-export async function launchSpecificOpenCodeTarget(target, targetPath, ensureShimRunning) {
-  const detected = detectOpenCodeInstallations()
-  const availableTargets = {
-    desktop: detected.desktop && existsSync(detected.desktop) ? detected.desktop : null,
-    cli: detected.cli && existsSync(detected.cli) ? detected.cli : null,
-  }
-  if (target !== "desktop" && target !== "cli") {
-    throw new Error(`Target no soportado: ${target}`)
-  }
-  if (!availableTargets[target]) {
-    throw new Error(`No encontré OpenCode ${target === "desktop" ? "Desktop" : "CLI"} instalado.`)
-  }
-  await ensureShimRunning()
-  launchTarget(target, availableTargets[target], targetPath)
-}
-
-function launchTarget(target, executable, targetPath) {
-  if (!executable) throw new Error(`No encontré el ejecutable para ${target}.`)
-  const isCmdShim = /\.(cmd|bat)$/i.test(executable)
-  const child = isCmdShim
-    ? spawn(process.env.ComSpec || "cmd.exe", ["/c", executable, targetPath], {
-        detached: true,
-        stdio: "ignore",
-        windowsHide: false,
-      })
-    : spawn(executable, [targetPath], {
-        detached: true,
-        stdio: "ignore",
-        windowsHide: false,
-      })
-  child.unref()
-}
-
 function resolveShellCommand() {
-  try {
-    const output = execFileSync("where", ["ocg"], {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-    }).split(/\r?\n/).map(line => line.trim()).filter(Boolean)
-    const match = output.find(line => line.toLowerCase().endsWith(".cmd")) || output[0]
-    if (!match) return null
-    if (/\.cmd$/i.test(match) || /\.bat$/i.test(match)) {
-      const comspec = process.env.ComSpec || "C:\\Windows\\System32\\cmd.exe"
-      return `"${comspec}" /d /s /c ""${match}" open-with`
-    }
-    return `"${match}" open-with`
-  } catch {
-    return null
-  }
-}
+  const detected = detectOpenCodeInstallations()
+  const desktop = detected.desktop
+  if (!desktop || !existsSync(desktop)) return null
+  return `"${desktop}"`
 
 function ensureMenuRoot(key, icon, subcommands) {
   execFileSync("reg", ["add", key, "/ve", "/f"], { stdio: "ignore" })
@@ -156,9 +86,8 @@ function writeCommandStoreVerb(verb, label, commandBase, target, argToken, icon)
   if (icon) {
     execFileSync("reg", ["add", verbKey, "/v", "Icon", "/d", icon, "/f"], { stdio: "ignore" })
   }
-  const commandValue = commandBase.includes('cmd.exe') || commandBase.includes('cmd" /d /s /c')
-    ? `${commandBase} ${target} \"${argToken}\"\"`
-    : `${commandBase} ${target} \"${argToken}\"`
+  // Direct executable path (quoted) — no target prefix needed
+  const commandValue = `${commandBase} \"${argToken}\"`
   execFileSync("reg", ["add", `${verbKey}\\command`, "/ve", "/d", commandValue, "/f"], { stdio: "ignore" })
 }
 

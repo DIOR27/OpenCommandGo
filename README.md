@@ -46,9 +46,6 @@ ocg refresh-models --full
 ocg refresh-models --parallel 6
 ocg refresh-models --full --parallel 2 --yes
 ocg set-api-key
-ocg open-path "C:\\path\\to\\folder"
-ocg open-with desktop "C:\\path\\to\\folder"
-ocg open-with cli "C:\\path\\to\\folder"
 ocg install-shell
 ocg uninstall-shell
 ocg reset-shell-choice

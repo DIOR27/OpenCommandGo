@@ -8,7 +8,7 @@ import { clearPid, getRuntimeSettings, readCompatibilityMatrix, readConfig, read
 import { getPaths } from "../config/paths.js"
 import { detectOpenCodeInstallations, inspectOpenCodeProvider, removeOpenCodeProvider, syncOpenCodeConfig } from "../opencode/config.js"
 import { refreshModelCatalogNow, startServer } from "../runtime/server.js"
-import { canManageWindowsShell, chooseAndLaunchOpenCode, installWindowsShellIntegration, launchSpecificOpenCodeTarget, removeWindowsShellIntegration } from "../windows/shell.js"
+import { canManageWindowsShell, installWindowsShellIntegration, removeWindowsShellIntegration } from "../windows/shell.js"
 
 export async function runCli(args) {
   const [command = "help", ...rest] = args
@@ -37,12 +37,6 @@ export async function runCli(args) {
       return
     case "stop":
       await stopCommand()
-      return
-    case "open-path":
-      await openPathCommand(rest)
-      return
-    case "open-with":
-      await openWithCommand(rest)
       return
     case "install-shell":
       await installShellCommand()
@@ -371,25 +365,6 @@ async function resetShellChoice() {
   console.log("Ya no hay elección recordada. Ahora se usa submenú contextual Desktop/CLI.")
 }
 
-async function openPathCommand(args) {
-  const targetPath = args.join(" ").trim()
-  if (!targetPath) {
-    console.log("Falta la ruta a abrir.")
-    return
-  }
-  await chooseAndLaunchOpenCode(targetPath, ensureShimRunning)
-}
-
-async function openWithCommand(args) {
-  const [target, ...pathParts] = args
-  const targetPath = pathParts.join(" ").trim()
-  if (!target || !targetPath) {
-    console.log("Uso: ocg open-with <desktop|cli> <ruta>")
-    return
-  }
-  await launchSpecificOpenCodeTarget(target, targetPath, ensureShimRunning)
-}
-
 async function installShellCommand() {
   const result = installWindowsShellIntegration()
   if (result.installed) {
@@ -471,8 +446,6 @@ Comandos:
   start [--background]
   serve
   stop
-  open-path <ruta>
-  open-with <desktop|cli> <ruta>
   install-shell
   enable-autostart
   disable-autostart
@@ -519,21 +492,6 @@ async function readHealth(host, port) {
   } catch {
     return null
   }
-}
-
-async function ensureShimRunning() {
-  const settings = getRuntimeSettings()
-  const alive = await readHealth(settings.host, settings.port)
-  if (alive) return
-
-  await startCommand(["--background"])
-  const deadline = Date.now() + 15000
-  while (Date.now() < deadline) {
-    const health = await readHealth(settings.host, settings.port)
-    if (health) return
-    await new Promise(resolve => setTimeout(resolve, 500))
-  }
-  throw new Error("No pude arrancar el shim a tiempo.")
 }
 
 function isProcessAlive(pid) {
