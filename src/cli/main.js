@@ -1,14 +1,15 @@
 import { spawn } from "node:child_process"
-import { existsSync, rmSync } from "node:fs"
+import { existsSync, readFileSync, rmSync, statSync } from "node:fs"
 import { createInterface } from "node:readline/promises"
 import { stdin, stdout } from "node:process"
 import { fileURLToPath } from "node:url"
 import { disableAutostart, enableAutostart, getAutostartStatus } from "../autostart/index.js"
-import { clearPid, getRuntimeSettings, readCompatibilityMatrix, readConfig, readPid, readSecrets, writeConfig, writePid, writeSecrets } from "../config/store.js"
+import { clearPid, clearWatchdogPid, getRuntimeSettings, readCompatibilityMatrix, readConfig, readPid, readSecrets, readWatchdogPid, writeConfig, writePid, writeSecrets, writeWatchdogPid } from "../config/store.js"
 import { getPaths } from "../config/paths.js"
 import { detectOpenCodeInstallations, inspectOpenCodeProvider, removeOpenCodeProvider, syncOpenCodeConfig } from "../opencode/config.js"
 import { refreshModelCatalogNow, startServer } from "../runtime/server.js"
-import { t } from "../shared/i18n.js"
+import { getLocale, t } from "../shared/i18n.js"
+import { findPidByPort, gracefulKill, isProcessAlive, sleep } from "../shared/process-utils.js"
 
 export async function runCli(args) {
   const [command = "help", ...rest] = args
@@ -32,6 +33,9 @@ export async function runCli(args) {
     case "doctor":
       await doctorCommand()
       return
+    case "logs":
+      await logsCommand(rest)
+      return
     case "refresh-models":
       await refreshModelsCommand(rest)
       return
@@ -49,6 +53,9 @@ export async function runCli(args) {
       return
     case "autostart":
       await autostartCommand(rest)
+      return
+    case "reset":
+      await resetCommand()
       return
     case "uninstall":
       await uninstallCommand()
@@ -210,6 +217,10 @@ async function startCommand(args) {
 
   writePid(child.pid)
   console.log(t("start.launched", child.pid))
+
+  // Launch watchdog daemon for auto-recovery
+  await spawnWatchdog(entry, child.pid, settings)
+  console.log(t("start.watchdog_active"))
 }
 
 async function statusCommand() {
@@ -243,16 +254,69 @@ async function doctorCommand() {
   const compatibility = readCompatibilityMatrix()
   const modelCount = Object.values(compatibility.models || {}).filter(model => model?.status !== "broken").length
 
-  console.log(t("doctor.api_key", settings.commandCodeApiKey ? t("doctor.ok") : t("doctor.missing")))
+  // Local checks
   console.log(t("doctor.shim_health", health ? t("doctor.up") : t("doctor.down")))
   console.log(t("doctor.opencode_config", detected.configFound ? t("status.yes") : t("status.no")))
   console.log(t("doctor.provider", provider ? t("status.yes") : t("status.no")))
   console.log(t("doctor.desktop", detected.desktop ? t("status.yes") : t("status.no")))
   console.log(t("doctor.cli", detected.cli ? t("status.yes") : t("status.no")))
   console.log(t("doctor.compat_matrix", getPaths().compatibilityFile))
+  console.log(t("doctor.catalog_age", formatCatalogAge(compatibility.updated_at)))
   console.log(t("doctor.autostart", autostart.enabled ? t("status.yes") : t("status.no")))
   console.log(t("doctor.autostart_provider", autostart.provider || t("misc.unknown")))
   console.log(t("doctor.models", modelCount))
+
+  // Remote checks (only if API key exists)
+  if (settings.commandCodeApiKey) {
+    // Connectivity check
+    const connectivityOk = await checkConnectivity(settings.commandCodeBaseUrl)
+    console.log(t("doctor.connectivity", settings.commandCodeBaseUrl, connectivityOk ? t("doctor.connectivity_ok") : t("doctor.connectivity_fail")))
+
+    // API key validation (replaces the static "API key: ok" check above)
+    const validation = await verifyApiKey(settings.commandCodeBaseUrl, settings.commandCodeApiKey)
+    if (validation.valid) {
+      console.log(t("doctor.api_key_valid", t("doctor.api_key_yes")))
+    } else {
+      console.log(t("doctor.api_key_valid", t("doctor.api_key_no")))
+      if (validation.error) {
+        console.log(t("doctor.api_key_error", validation.error))
+      }
+    }
+  } else {
+    console.log(t("doctor.api_key", t("doctor.missing")))
+  }
+}
+
+async function checkConnectivity(baseUrl) {
+  try {
+    const response = await fetch(baseUrl, {
+      method: "GET",
+      signal: AbortSignal.timeout(5000),
+    })
+    return true
+  } catch {
+    return false
+  }
+}
+
+async function verifyApiKey(baseUrl, apiKey) {
+  try {
+    const response = await fetch(`${baseUrl}/provider/v1/models`, {
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+      },
+      signal: AbortSignal.timeout(8000),
+    })
+    if (response.ok) {
+      return { valid: true }
+    }
+    if (response.status === 401) {
+      return { valid: false, error: `${response.status} — unauthorized` }
+    }
+    return { valid: false, error: `${response.status} ${response.statusText}` }
+  } catch (error) {
+    return { valid: false, error: error instanceof Error ? error.message : String(error) }
+  }
 }
 
 async function refreshModelsCommand(args = []) {
@@ -346,20 +410,149 @@ async function resolveRefreshProbeConsent(options) {
   }
 }
 
-async function stopCommand() {
-  const pid = readPid()
-  if (!pid) {
-    console.log(t("stop.no_pid"))
+async function logsCommand(args = []) {
+  const paths = getPaths()
+  let watchdog = false
+  let lines = 50
+  let follow = false
+
+  for (let i = 0; i < args.length; i++) {
+    const arg = String(args[i] || "").trim()
+    if (!arg) continue
+    if (arg === "--watchdog") {
+      watchdog = true
+      continue
+    }
+    if (arg === "-f" || arg === "--follow") {
+      follow = true
+      continue
+    }
+    if ((arg === "-n" || arg === "--lines") && i + 1 < args.length) {
+      const n = Number(args[i + 1])
+      if (Number.isInteger(n) && n > 0) {
+        lines = n
+        i++
+      }
+      continue
+    }
+    const match = arg.match(/^--lines=(\d+)$/)
+    if (match) {
+      const n = Number(match[1])
+      if (n > 0) lines = n
+      continue
+    }
+    const shortMatch = arg.match(/^-n(\d+)$/)
+    if (shortMatch) {
+      const n = Number(shortMatch[1])
+      if (n > 0) lines = n
+      continue
+    }
+  }
+
+  const logFile = watchdog ? paths.watchdogLogFile : paths.logFile
+  if (!existsSync(logFile)) {
+    console.log(t("logs.no_file", logFile))
     return
   }
-  if (!isProcessAlive(pid)) {
+
+  console.log(t(watchdog ? "logs.watchdog_header" : "logs.header", logFile))
+  console.log(t("logs.lines", lines))
+
+  const tail = readTail(logFile, lines)
+  for (const line of tail) {
+    console.log(line)
+  }
+
+  if (follow) {
+    await followLog(logFile, tail.length)
+  }
+}
+
+function readTail(filePath, count) {
+  const content = readFileSync(filePath, "utf8")
+  const allLines = content.split(/\r?\n/)
+  return allLines.slice(-count)
+}
+
+async function followLog(filePath, initialLineCount) {
+  console.log(t("logs.following"))
+
+  process.on("SIGINT", () => process.exit(0))
+  process.on("SIGTERM", () => process.exit(0))
+
+  let seenLines = initialLineCount
+  while (true) {
+    await sleep(1000)
+    try {
+      const content = readFileSync(filePath, "utf8")
+      const allLines = content.split(/\r?\n/)
+      // Detect log rotation: if the file shrank significantly, restart
+      if (allLines.length < Math.floor(seenLines * 0.5)) {
+        seenLines = 0
+      }
+      if (allLines.length > seenLines) {
+        for (let i = seenLines; i < allLines.length; i++) {
+          if (allLines[i]) console.log(allLines[i])
+        }
+        seenLines = allLines.length
+      }
+    } catch {
+      // File might be temporarily unavailable
+    }
+  }
+}
+
+async function stopCommand() {
+  const settings = getRuntimeSettings()
+  const savedPid = readPid()
+
+  // Kill watchdog first (if any)
+  await killWatchdog()
+
+  // Case 1: PID saved and process alive — graceful shutdown
+  if (savedPid && isProcessAlive(savedPid)) {
+    console.log(t("stop.graceful", savedPid))
+    const shutdownUrl = `http://${settings.host}:${settings.port}/shutdown`
+    await gracefulKill(savedPid, {
+      onForceTimeout: () => console.log(t("stop.graceful_timeout")),
+      shutdownUrl,
+      shutdownToken: settings.shimAccessToken,
+    })
+    clearPid()
+    console.log(t("stop.stopped", savedPid))
+    return
+  }
+
+  // Case 2: PID saved but process already dead — clean and fall through to port scan
+  if (savedPid) {
     clearPid()
     console.log(t("stop.already_gone"))
+    // Don't return — there could be a different stale process on the port
+  }
+
+  // Case 3: No PID saved — fall back to port scan
+  const foundPid = findPidByPort(settings.port)
+  if (!foundPid) {
+    console.log(t("stop.port_not_occupied", settings.port))
     return
   }
-  process.kill(pid)
+
+  // Don't kill ourselves
+  if (foundPid === process.pid) {
+    console.log(t("stop.skipped_self", foundPid))
+    clearPid()
+    return
+  }
+
+  console.log(t("stop.found_by_port", foundPid, settings.port))
+  const shutdownUrl = `http://${settings.host}:${settings.port}/shutdown`
+  await gracefulKill(foundPid, {
+    onForceTimeout: () => console.log(t("stop.graceful_timeout")),
+    shutdownUrl,
+    shutdownToken: settings.shimAccessToken,
+  })
   clearPid()
-  console.log(t("stop.stopped", pid))
+  console.log(t("stop.killed_by_port", settings.port, foundPid))
 }
 
 async function autostartCommand(args) {
@@ -398,7 +591,34 @@ async function autostartStatusCommand() {
   console.log(t("autostart.status_provider", status.provider || t("misc.unknown")))
   console.log(t("autostart.mode", status.mode))
   console.log(t("autostart.command_line", status.command))
-  console.log(t(status.matchesConfig ? "autostart.sync_yes" : "autostart.sync_no"))
+  console.log(t(status.matchesConfig ? "autostart.sync_yes" : "autostart.sync_no", status.matchesConfig ? t("status.yes") : t("status.no")))
+}
+
+async function resetCommand() {
+  await stopCommand()
+  const paths = getPaths()
+
+  // Delete config and secrets (keep everything else: compat matrix, logs, PID, watchdogs)
+  let deleted = []
+  if (existsSync(paths.configFile)) {
+    rmSync(paths.configFile)
+    deleted.push(paths.configFile)
+  }
+  if (existsSync(paths.secretsFile)) {
+    rmSync(paths.secretsFile)
+    deleted.push(paths.secretsFile)
+  }
+
+  if (deleted.length === 0) {
+    console.log(t("reset.nothing"))
+    return
+  }
+
+  console.log(t("reset.done"))
+  for (const file of deleted) {
+    console.log(`  ${t("reset.deleted", file)}`)
+  }
+  console.log(t("reset.regenerate"))
 }
 
 async function uninstallCommand() {
@@ -486,21 +706,63 @@ async function waitForShimReady({ pid, host, port, token }) {
   return false
 }
 
-function isProcessAlive(pid) {
-  try {
-    process.kill(pid, 0)
-    return true
-  } catch {
-    return false
+async function spawnWatchdog(entry, shimPid, settings) {
+  const watchdogEntry = fileURLToPath(new URL("../watchdog/index.js", import.meta.url))
+  const config = JSON.stringify({
+    shimPid,
+    host: settings.host,
+    port: settings.port,
+    token: settings.shimAccessToken,
+    executablePath: process.execPath,
+    entryPath: entry,
+  })
+  const child = spawn(process.execPath, [watchdogEntry, config], {
+    detached: true,
+    stdio: "ignore",
+    windowsHide: true,
+  })
+  child.unref()
+  writeWatchdogPid(child.pid)
+}
+
+async function killWatchdog() {
+  const watchdogPid = readWatchdogPid()
+  if (watchdogPid && isProcessAlive(watchdogPid)) {
+    try {
+      if (process.platform === "win32") {
+        spawn("taskkill", ["/F", "/PID", String(watchdogPid)], {
+          stdio: "ignore",
+        })
+      } else {
+        process.kill(watchdogPid, "SIGKILL")
+      }
+    } catch {
+      // Already gone
+    }
   }
+  clearWatchdogPid()
+}
+
+function formatCatalogAge(updatedAt) {
+  if (!updatedAt) return t("misc.unknown")
+  const ageMs = Date.now() - new Date(updatedAt).getTime()
+  if (ageMs < 0) return t("misc.unknown")
+
+  const es = getLocale() === "es"
+  const hours = Math.floor(ageMs / 3600000)
+  const minutes = Math.floor((ageMs % 3600000) / 60000)
+
+  if (hours >= 24) {
+    const days = Math.floor(hours / 24)
+    return es ? `hace ${days}d` : `${days}d ago`
+  }
+  if (hours >= 1) return es ? `hace ${hours}h ${minutes}m` : `${hours}h ${minutes}m ago`
+  if (minutes >= 1) return es ? `hace ${minutes}m` : `${minutes}m ago`
+  return es ? "<1m" : "<1m ago"
 }
 
 function getShimHeaders(token) {
   return {
     "x-ocg-token": token,
   }
-}
-
-function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms))
 }

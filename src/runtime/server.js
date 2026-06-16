@@ -1,5 +1,5 @@
 import { createServer } from "node:http"
-import { appendFileSync, existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs"
+import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs"
 import { execFileSync } from "node:child_process"
 import { homedir } from "node:os"
 import { join } from "node:path"
@@ -11,6 +11,7 @@ import { MODELS, MODEL_SET } from "../shared/models.js"
 import { deriveCatalogFromCompatibility, extractModelRows, fallbackCatalog, normalizeCatalogRows } from "../shared/catalog.js"
 import { normalizeCommandCodeReasoningEffort } from "../shared/commandcode-thinking.js"
 import { resolveContextWindow } from "../shared/context-windows.js"
+import { rotateLogIfNeeded } from "../shared/log-rotation.js"
 import { t } from "../shared/i18n.js"
 
 const IMAGE_TEST_URL = "https://upload.wikimedia.org/wikipedia/commons/thumb/3/3a/Cat03.jpg/320px-Cat03.jpg"
@@ -72,6 +73,23 @@ export async function startServer() {
           models: availableCatalog.map(({ id, name }) => ({ id, name })),
           compatibility_updated_at: compatibilityMatrix.updated_at || null,
         })
+      }
+
+      if (req.method === "POST" && url.pathname === "/shutdown") {
+        if (!requireShimAuth(req, res, settings)) return
+        log("SHUTDOWN requested via /shutdown endpoint")
+        json(res, 200, { ok: true, message: "Shutting down" })
+        setImmediate(() => {
+          clearPid()
+          if (currentServer) {
+            currentServer.close(() => {
+              process.exit(0)
+            })
+          } else {
+            process.exit(0)
+          }
+        })
+        return
       }
 
       if (req.method === "GET" && url.pathname === "/compatibility") {
@@ -874,6 +892,7 @@ function writeSSE(res, payload) {
 function log(line) {
   const paths = getPaths()
   ensureDir(paths.logDir)
+  rotateLogIfNeeded(paths.logFile)
   appendFileSync(paths.logFile, `[${new Date().toISOString()}] ${line}\n`)
 }
 

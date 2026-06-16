@@ -22,6 +22,7 @@ const messages = {
     "start.already_running": "OpenCommandGo already running with PID {0}.",
     "start.already_running_port": "OpenCommandGo already running on http://{0}:{1}.",
     "start.launched": "OpenCommandGo launched in background with PID {0}.",
+    "start.watchdog_active": "Watchdog auto-recovery active.",
     "start.port_conflict": "Port {0} is already occupied by another process or a stale shim with a different token. Stop it first and try again.",
     "start.failed": "OpenCommandGo could not start in background. Check if the port is free and try again.",
 
@@ -32,6 +33,12 @@ const messages = {
     "stop.no_pid": "No PID saved.",
     "stop.already_gone": "Process no longer existed; cleaned PID.",
     "stop.stopped": "OpenCommandGo stopped (PID {0}).",
+    "stop.graceful": "Stopping OpenCommandGo (PID {0})...",
+    "stop.graceful_timeout": "Process did not exit gracefully, forcing shutdown...",
+    "stop.found_by_port": "Found process PID {0} listening on port {1}.",
+    "stop.port_not_occupied": "No process found listening on port {0}.",
+    "stop.killed_by_port": "Stopped process on port {0} (PID {1}).",
+    "stop.skipped_self": "Process PID {0} is the current process; skipping.",
 
     // -- Status --
     "status.shim": "Shim: {0} ({1}:{2})",
@@ -57,11 +64,19 @@ const messages = {
     "doctor.shim_health": "OpenCommandGo health: {0}",
     "doctor.up": "up",
     "doctor.down": "down",
+    "doctor.connectivity": "Connectivity to {0}: {1}",
+    "doctor.connectivity_ok": "ok",
+    "doctor.connectivity_fail": "fail",
+    "doctor.api_key_valid": "API key valid: {0}",
+    "doctor.api_key_yes": "yes",
+    "doctor.api_key_no": "no",
+    "doctor.api_key_error": "API key check: {0}",
     "doctor.opencode_config": "OpenCode config detected: {0}",
     "doctor.provider": "Provider OCG CommandCode configured: {0}",
     "doctor.desktop": "Desktop detected: {0}",
     "doctor.cli": "CLI detected: {0}",
     "doctor.compat_matrix": "Compat matrix: {0}",
+    "doctor.catalog_age": "Catalog updated: {0}",
     "doctor.autostart": "Autostart configured: {0}",
     "doctor.autostart_provider": "Autostart provider: {0}",
     "doctor.models": "Useful models in catalog: {0}",
@@ -89,13 +104,14 @@ const messages = {
     "error.upstream_models": "models {0}",
 
     // -- Help --
-    "help.text": `ocg
+    "help.text": `${bold("ocg")}
 
 Commands:
   setup
   start [--background]
   serve
   stop
+  logs [--lines N] [--follow|-f]
   enable-autostart
   disable-autostart
   autostart-status
@@ -104,6 +120,7 @@ Commands:
   doctor
   refresh-models [--probe|--full] [--parallel N] [--yes]
   set-api-key
+  reset
   uninstall`,
 
     // -- Autostart --
@@ -117,11 +134,16 @@ Commands:
     "autostart.status_provider": "Provider: {0}",
     "autostart.mode": "Mode: {0}",
     "autostart.command_line": "Command: {0}",
-    "autostart.sync_yes": "Config synced: yes",
-    "autostart.sync_no": "Config synced: no",
+    "autostart.sync_yes": "Config synced: {0}",
+    "autostart.sync_no": "Config synced: {0}",
     "autostart.usage": "Usage: ocg autostart <enable|disable|status>",
 
     // -- Uninstall --
+    "reset.nothing": "Config and secrets already at defaults. Nothing to reset.",
+    "reset.done": "OpenCommandGo config reset:",
+    "reset.deleted": "Deleted: {0}",
+    "reset.regenerate": "Run 'ocg setup' to regenerate config, or 'ocg start --background' to start with defaults.",
+
     "uninstall.provider_removed": "Provider in OpenCode: removed",
     "uninstall.provider_not_found": "Provider in OpenCode: not configured",
     "uninstall.data_deleted": "Local data deleted: {0}",
@@ -134,6 +156,14 @@ Commands:
     "misc.enter_keep": " (Enter to keep current)",
     "misc.unknown": "unknown",
     "misc.no": "no",
+
+    // -- Logs --
+    "logs.no_file": "No log file found at: {0}.",
+    "logs.header": "Log: {0}",
+    "logs.watchdog_header": "Watchdog log: {0}",
+    "logs.lines": "Last {0} lines:",
+    "logs.following": "Following (Ctrl+C to stop)...",
+    "logs.usage": "Usage: ocg logs [--lines N] [--follow|-f] [--watchdog]",
   },
 
   es: {
@@ -159,6 +189,7 @@ Commands:
     "start.already_running": "OpenCommandGo ya está corriendo con PID {0}.",
     "start.already_running_port": "OpenCommandGo ya está corriendo en http://{0}:{1}.",
     "start.launched": "OpenCommandGo lanzado en background con PID {0}.",
+    "start.watchdog_active": "Watchdog de auto-recuperación activo.",
     "start.port_conflict": "El puerto {0} ya está ocupado por otro proceso o por un shim viejo con token distinto. Primero detenelo y volvé a intentar.",
     "start.failed": "OpenCommandGo no pudo iniciar en background. Revisá si el puerto está libre y volvé a intentar.",
 
@@ -169,6 +200,12 @@ Commands:
     "stop.no_pid": "No hay PID guardado.",
     "stop.already_gone": "El proceso ya no existía; limpié el PID.",
     "stop.stopped": "OpenCommandGo detenido (PID {0}).",
+    "stop.graceful": "Deteniendo OpenCommandGo (PID {0})...",
+    "stop.graceful_timeout": "El proceso no cerró gracefulmente, forzando cierre...",
+    "stop.found_by_port": "Proceso encontrado PID {0} escuchando en puerto {1}.",
+    "stop.port_not_occupied": "No hay proceso escuchando en el puerto {0}.",
+    "stop.killed_by_port": "Proceso en puerto {0} (PID {1}) detenido.",
+    "stop.skipped_self": "El proceso PID {0} es el proceso actual; omitiendo.",
 
     // -- Status --
     "status.shim": "Shim: {0} ({1}:{2})",
@@ -194,11 +231,19 @@ Commands:
     "doctor.shim_health": "OpenCommandGo health: {0}",
     "doctor.up": "ok",
     "doctor.down": "caído",
+    "doctor.connectivity": "Conectividad a {0}: {1}",
+    "doctor.connectivity_ok": "ok",
+    "doctor.connectivity_fail": "falla",
+    "doctor.api_key_valid": "API key válida: {0}",
+    "doctor.api_key_yes": "sí",
+    "doctor.api_key_no": "no",
+    "doctor.api_key_error": "API key check: {0}",
     "doctor.opencode_config": "OpenCode config detectada: {0}",
     "doctor.provider": "Provider OCG CommandCode configurado: {0}",
     "doctor.desktop": "Desktop detectado: {0}",
     "doctor.cli": "CLI detectado: {0}",
     "doctor.compat_matrix": "Compat matrix: {0}",
+    "doctor.catalog_age": "Catálogo actualizado: {0}",
     "doctor.autostart": "Autostart configurado: {0}",
     "doctor.autostart_provider": "Autostart proveedor: {0}",
     "doctor.models": "Modelos disponibles en catálogo: {0}",
@@ -226,13 +271,14 @@ Commands:
     "error.upstream_models": "models {0}",
 
     // -- Help --
-    "help.text": `ocg
+    "help.text": `${bold("ocg")}
 
 Comandos:
   setup
   start [--background]
   serve
   stop
+  logs [--lines N] [--follow|-f]
   enable-autostart
   disable-autostart
   autostart-status
@@ -241,6 +287,7 @@ Comandos:
   doctor
   refresh-models [--probe|--full] [--parallel N] [--yes]
   set-api-key
+  reset
   uninstall`,
 
     // -- Autostart --
@@ -254,11 +301,16 @@ Comandos:
     "autostart.status_provider": "Proveedor: {0}",
     "autostart.mode": "Modo: {0}",
     "autostart.command_line": "Comando: {0}",
-    "autostart.sync_yes": "Config sincronizada: sí",
-    "autostart.sync_no": "Config sincronizada: no",
+    "autostart.sync_yes": "Config sincronizada: {0}",
+    "autostart.sync_no": "Config sincronizada: {0}",
     "autostart.usage": "Uso: ocg autostart <enable|disable|status>",
 
     // -- Uninstall --
+    "reset.nothing": "La config y secrets ya están en valores por defecto. Nada que resetear.",
+    "reset.done": "OpenCommandGo config reseteada:",
+    "reset.deleted": "Borrado: {0}",
+    "reset.regenerate": "Ejecutá 'ocg setup' para regenerar la config, o 'ocg start --background' para arrancar con valores por defecto.",
+
     "uninstall.provider_removed": "Provider en OpenCode: removido",
     "uninstall.provider_not_found": "Provider en OpenCode: no estaba configurado",
     "uninstall.data_deleted": "Datos locales borrados: {0}",
@@ -271,8 +323,18 @@ Comandos:
     "misc.enter_keep": " (Enter para conservar la actual)",
     "misc.unknown": "desconocido",
     "misc.no": "no",
+
+    // -- Logs --
+    "logs.no_file": "No se encontró archivo de log en: {0}.",
+    "logs.header": "Log: {0}",
+    "logs.watchdog_header": "Watchdog log: {0}",
+    "logs.lines": "Últimas {0} líneas:",
+    "logs.following": "Siguiendo (Ctrl+C para detener)...",
+    "logs.usage": "Uso: ocg logs [--lines N] [--follow|-f] [--watchdog]",
   },
 }
+
+import { colorizeStatus, bold } from "./color.js"
 
 function detectLocale() {
   try {
@@ -291,7 +353,9 @@ export function t(key, ...args) {
   if (str === undefined) return key
   if (args.length > 0) {
     for (const arg of args) {
-      str = str.replace(/\{(\d+)\}/, String(arg ?? ""))
+      // Colorize replacement args that are single-word status values
+      const colored = colorizeStatus(String(arg ?? ""))
+      str = str.replace(/\{(\d+)\}/, colored)
     }
   }
   return str
