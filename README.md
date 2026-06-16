@@ -1,6 +1,6 @@
 # OpenCommandGo
 
-CLI shim to use Command Code models from OpenCode through a local OpenAI-compatible bridge.
+CLI shim to use Command Code Go subscription models from OpenCode through a local OpenAI-compatible bridge.
 
 **Binary:** `ocg`
 
@@ -46,9 +46,6 @@ ocg refresh-models --full
 ocg refresh-models --parallel 6
 ocg refresh-models --full --parallel 2 --yes
 ocg set-api-key
-ocg install-shell
-ocg uninstall-shell
-ocg reset-shell-choice
 ocg uninstall
 ```
 
@@ -140,7 +137,6 @@ Recommended:
 
 ## Current Limitations
 
-- Windows shell integration is included but may need further iteration depending on the Explorer version
 - Thinking/reasoning levels per model are not synthesized; they only appear when a real mapping is available
 - Depends on Command Code endpoints which may change
 

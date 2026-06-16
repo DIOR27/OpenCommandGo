@@ -9,10 +9,6 @@ const DEFAULT_CONFIG = {
   commandCodeBaseUrl: "https://api.commandcode.ai",
   commandCodeVersion: "0.32.2",
   compatibilityRefreshHours: 6,
-  shell: {
-    enabled: false,
-    installed: false,
-  },
   autostart: {
     enabled: false,
     provider: null,
@@ -33,10 +29,6 @@ export function readConfig() {
   merged.detectedOpenCode = {
     ...DEFAULT_CONFIG.detectedOpenCode,
     ...(merged.detectedOpenCode || {}),
-  }
-  merged.shell = {
-    ...DEFAULT_CONFIG.shell,
-    ...(merged.shell || {}),
   }
   merged.autostart = {
     ...DEFAULT_CONFIG.autostart,

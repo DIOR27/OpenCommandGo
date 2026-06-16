@@ -8,7 +8,6 @@ import { clearPid, getRuntimeSettings, readCompatibilityMatrix, readConfig, read
 import { getPaths } from "../config/paths.js"
 import { detectOpenCodeInstallations, inspectOpenCodeProvider, removeOpenCodeProvider, syncOpenCodeConfig } from "../opencode/config.js"
 import { refreshModelCatalogNow, startServer } from "../runtime/server.js"
-import { canManageWindowsShell, installWindowsShellIntegration, removeWindowsShellIntegration } from "../windows/shell.js"
 
 export async function runCli(args) {
   const [command = "help", ...rest] = args
@@ -38,9 +37,6 @@ export async function runCli(args) {
     case "stop":
       await stopCommand()
       return
-    case "install-shell":
-      await installShellCommand()
-      return
     case "enable-autostart":
       await enableAutostartCommand()
       return
@@ -52,12 +48,6 @@ export async function runCli(args) {
       return
     case "autostart":
       await autostartCommand(rest)
-      return
-    case "uninstall-shell":
-      await uninstallShellCommand()
-      return
-    case "reset-shell-choice":
-      await resetShellChoice()
       return
     case "uninstall":
       await uninstallCommand()
@@ -90,18 +80,12 @@ async function runSetup() {
     const portInput = await rl.question(`Puerto del shim [${currentConfig.port}]: `)
     const port = normalizePort(portInput, currentConfig.port)
 
-    const shellAnswer = await rl.question("¿Querés instalar la integración de shell de Windows ahora? [Y/n]: ")
-    const shellEnabled = normalizeYesNo(shellAnswer, true)
     const autostartAnswer = await rl.question("¿Querés habilitar inicio automático del shim al iniciar sesión? [Y/n]: ")
     const autostartEnabled = normalizeYesNo(autostartAnswer, true)
 
     const nextConfig = {
       ...currentConfig,
       port,
-      shell: {
-        ...(currentConfig.shell || {}),
-        enabled: shellEnabled,
-      },
       detectedOpenCode: {
         configFound: detected.configFound,
         desktop: detected.desktop,
@@ -125,13 +109,6 @@ async function runSetup() {
       if (target) console.log(`OpenCode quedó configurado en: ${target}`)
     } else {
       console.log("OpenCode no está detectado todavía. Guardé la config del shim igual.")
-    }
-
-    if (shellEnabled && canManageWindowsShell() && (detected.desktop || detected.cli)) {
-      const result = installWindowsShellIntegration()
-      console.log(result.installed
-        ? "Integración de shell de Windows instalada."
-        : "No pude instalar la integración de shell de Windows.")
     }
 
     if (autostartEnabled) {
@@ -225,7 +202,6 @@ async function statusCommand() {
   console.log(`Provider registrado: ${inspectOpenCodeProvider(config.providerId) ? "sí" : "no"}`)
   console.log(`Desktop detectado: ${detected.desktop || "no"}`)
   console.log(`CLI detectado: ${detected.cli || "no"}`)
-  console.log(`Shell Windows instalada: ${config.shell?.installed ? "sí" : "no"}`)
   console.log(`Autostart habilitado: ${autostart.enabled ? "sí" : "no"}`)
   console.log(`Autostart proveedor: ${autostart.provider || "no"}`)
   console.log(`Modelos útiles en catálogo: ${modelCount}`)
@@ -248,7 +224,6 @@ async function doctorCommand() {
   console.log(`Desktop detectado: ${detected.desktop ? "sí" : "no"}`)
   console.log(`CLI detectado: ${detected.cli ? "sí" : "no"}`)
   console.log(`Compat matrix: ${getPaths().compatibilityFile}`)
-  console.log(`Shell Windows instalada: ${config.shell?.installed ? "sí" : "no"}`)
   console.log(`Autostart configurado: ${autostart.enabled ? "sí" : "no"}`)
   console.log(`Autostart proveedor: ${autostart.provider || "no"}`)
   console.log(`Modelos útiles en catálogo: ${modelCount}`)
@@ -361,19 +336,6 @@ async function stopCommand() {
   console.log(`Shim detenido (PID ${pid}).`)
 }
 
-async function resetShellChoice() {
-  console.log("Ya no hay elección recordada. Ahora se usa submenú contextual Desktop/CLI.")
-}
-
-async function installShellCommand() {
-  const result = installWindowsShellIntegration()
-  if (result.installed) {
-    console.log("Integración de shell instalada.")
-    return
-  }
-  console.log(`No pude instalar la integración de shell (${result.reason}).`)
-}
-
 async function autostartCommand(args) {
   const [subcommand = "status"] = args
   switch (subcommand) {
@@ -413,19 +375,9 @@ async function autostartStatusCommand() {
   console.log(`Config sincronizada: ${status.matchesConfig ? "sí" : "no"}`)
 }
 
-async function uninstallShellCommand() {
-  const result = removeWindowsShellIntegration()
-  if (result.removed) {
-    console.log("Integración de shell removida.")
-    return
-  }
-  console.log(`No pude remover la integración de shell (${result.reason}).`)
-}
-
 async function uninstallCommand() {
   await stopCommand()
   await disableAutostart()
-  if (canManageWindowsShell()) removeWindowsShellIntegration()
   const config = readConfig()
   const removedProvider = removeOpenCodeProvider(config.providerId)
   const dataDir = getPaths().dataDir
@@ -446,17 +398,14 @@ Comandos:
   start [--background]
   serve
   stop
-  install-shell
   enable-autostart
   disable-autostart
   autostart-status
   autostart <enable|disable|status>
-  uninstall-shell
   status
   doctor
   refresh-models [--probe|--full] [--parallel N] [--yes]
   set-api-key
-  reset-shell-choice
   uninstall`)
 }
 
