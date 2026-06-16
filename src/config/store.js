@@ -144,6 +144,25 @@ export function clearPid() {
   if (existsSync(paths.pidFile)) unlinkSync(paths.pidFile)
 }
 
+export function readWatchdogPid() {
+  const paths = getPaths()
+  if (!existsSync(paths.watchdogPidFile)) return null
+  const raw = readFileSync(paths.watchdogPidFile, "utf8").trim()
+  const pid = Number(raw)
+  return Number.isInteger(pid) && pid > 0 ? pid : null
+}
+
+export function writeWatchdogPid(pid) {
+  const paths = getPaths()
+  ensureDir(paths.dataDir)
+  writeFileSync(paths.watchdogPidFile, String(pid), "utf8")
+}
+
+export function clearWatchdogPid() {
+  const paths = getPaths()
+  if (existsSync(paths.watchdogPidFile)) unlinkSync(paths.watchdogPidFile)
+}
+
 function readJsonIfExists(file) {
   if (!existsSync(file)) return null
   try {

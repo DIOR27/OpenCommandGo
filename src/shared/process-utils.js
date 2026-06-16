@@ -45,7 +45,7 @@ export function findPidByPort(port, { execFileSync: _exec } = {}) {
         if (
           parts.length >= 5
           && parts[0].toLowerCase().startsWith("tcp")
-          && parts[3] === "LISTENING"
+          && parts[3].toLowerCase().includes("listen")
         ) {
           const address = parts[1]
           const colonIdx = address.lastIndexOf(":")
