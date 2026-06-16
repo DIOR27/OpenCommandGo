@@ -16,6 +16,7 @@
   ],
   "scripts": {
     "start": "node ./bin/ocg.js serve",
+    "test": "node --test",
     "pack:dry-run": "npm pack --dry-run"
   },
   "publishConfig": {

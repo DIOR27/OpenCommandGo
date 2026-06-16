@@ -32,6 +32,12 @@ const messages = {
     "stop.no_pid": "No PID saved.",
     "stop.already_gone": "Process no longer existed; cleaned PID.",
     "stop.stopped": "OpenCommandGo stopped (PID {0}).",
+    "stop.graceful": "Stopping OpenCommandGo (PID {0})...",
+    "stop.graceful_timeout": "Process did not exit gracefully, forcing shutdown...",
+    "stop.found_by_port": "Found process PID {0} listening on port {1}.",
+    "stop.port_not_occupied": "No process found listening on port {0}.",
+    "stop.killed_by_port": "Stopped process on port {0} (PID {1}).",
+    "stop.skipped_self": "Process PID {0} is the current process; skipping.",
 
     // -- Status --
     "status.shim": "Shim: {0} ({1}:{2})",
@@ -169,6 +175,12 @@ Commands:
     "stop.no_pid": "No hay PID guardado.",
     "stop.already_gone": "El proceso ya no existía; limpié el PID.",
     "stop.stopped": "OpenCommandGo detenido (PID {0}).",
+    "stop.graceful": "Deteniendo OpenCommandGo (PID {0})...",
+    "stop.graceful_timeout": "El proceso no cerró gracefulmente, forzando cierre...",
+    "stop.found_by_port": "Proceso encontrado PID {0} escuchando en puerto {1}.",
+    "stop.port_not_occupied": "No hay proceso escuchando en el puerto {0}.",
+    "stop.killed_by_port": "Proceso en puerto {0} (PID {1}) detenido.",
+    "stop.skipped_self": "El proceso PID {0} es el proceso actual; omitiendo.",
 
     // -- Status --
     "status.shim": "Shim: {0} ({1}:{2})",

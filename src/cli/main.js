@@ -9,6 +9,7 @@ import { getPaths } from "../config/paths.js"
 import { detectOpenCodeInstallations, inspectOpenCodeProvider, removeOpenCodeProvider, syncOpenCodeConfig } from "../opencode/config.js"
 import { refreshModelCatalogNow, startServer } from "../runtime/server.js"
 import { t } from "../shared/i18n.js"
+import { findPidByPort, gracefulKill, isProcessAlive, sleep } from "../shared/process-utils.js"
 
 export async function runCli(args) {
   const [command = "help", ...rest] = args
@@ -347,19 +348,43 @@ async function resolveRefreshProbeConsent(options) {
 }
 
 async function stopCommand() {
-  const pid = readPid()
-  if (!pid) {
-    console.log(t("stop.no_pid"))
+  const settings = getRuntimeSettings()
+  const savedPid = readPid()
+
+  // Case 1: PID saved and process alive — graceful shutdown
+  if (savedPid && isProcessAlive(savedPid)) {
+    console.log(t("stop.graceful", savedPid))
+    await gracefulKill(savedPid, { onForceTimeout: () => console.log(t("stop.graceful_timeout")) })
+    clearPid()
+    console.log(t("stop.stopped", savedPid))
     return
   }
-  if (!isProcessAlive(pid)) {
+
+  // Case 2: PID saved but process already dead — clean and fall through to port scan
+  if (savedPid) {
     clearPid()
     console.log(t("stop.already_gone"))
+    // Don't return — there could be a different stale process on the port
+  }
+
+  // Case 3: No PID saved — fall back to port scan
+  const foundPid = findPidByPort(settings.port)
+  if (!foundPid) {
+    console.log(t("stop.port_not_occupied", settings.port))
     return
   }
-  process.kill(pid)
+
+  // Don't kill ourselves
+  if (foundPid === process.pid) {
+    console.log(t("stop.skipped_self", foundPid))
+    clearPid()
+    return
+  }
+
+  console.log(t("stop.found_by_port", foundPid, settings.port))
+  await gracefulKill(foundPid, { onForceTimeout: () => console.log(t("stop.graceful_timeout")) })
   clearPid()
-  console.log(t("stop.stopped", pid))
+  console.log(t("stop.killed_by_port", settings.port, foundPid))
 }
 
 async function autostartCommand(args) {
@@ -486,21 +511,8 @@ async function waitForShimReady({ pid, host, port, token }) {
   return false
 }
 
-function isProcessAlive(pid) {
-  try {
-    process.kill(pid, 0)
-    return true
-  } catch {
-    return false
-  }
-}
-
 function getShimHeaders(token) {
   return {
     "x-ocg-token": token,
   }
-}
-
-function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms))
 }
