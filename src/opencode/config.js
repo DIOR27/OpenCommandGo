@@ -3,7 +3,12 @@ import { join } from "node:path"
 import { getPaths, ensureParentDir } from "../config/paths.js"
 import { readSecrets } from "../config/store.js"
 import { deriveCatalogFromCompatibility, fallbackCatalog } from "../shared/catalog.js"
-import { commandCodeEffortLevelsForModel, supportsCommandCodeEffortSelection } from "../shared/commandcode-thinking.js"
+import {
+  commandCodeEffortLevelsForModel,
+  commandCodeReasoningInterleavedField,
+  supportsCommandCodeEffortSelection,
+  supportsCommandCodeReasoning,
+} from "../shared/commandcode-thinking.js"
 import { resolveContextWindow } from "../shared/context-windows.js"
 
 export function detectOpenCodeInstallations() {
@@ -65,6 +70,8 @@ function buildModelConfig(compatibilityMatrix) {
     if (compat?.status === "broken") continue
     const supportedInputs = resolveSupportedInputs(compat)
     const contextWindow = resolveContextWindow(id, context_length)
+    const supportsReasoning = supportsCommandCodeReasoning(id, compat?.tags)
+    const interleavedField = commandCodeReasoningInterleavedField(id)
     models[id] = {
       name,
       limit: {
@@ -93,6 +100,12 @@ function buildModelConfig(compatibilityMatrix) {
           source: resolveCapabilitySource(compat, "video"),
         },
       },
+      ...(supportsReasoning ? { reasoning: true } : {}),
+      ...(interleavedField ? {
+        interleaved: {
+          field: interleavedField,
+        },
+      } : {}),
       ...(supportsCommandCodeEffortSelection(id, compat?.tags) ? {
         variants: buildReasoningVariants(id),
       } : {}),

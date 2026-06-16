@@ -122,6 +122,12 @@ Available modes:
 - `ocg refresh-models --full` — probes text, image, reasoning, and tools
 - `ocg refresh-models --parallel 6` — override the worker count
 
+OpenCode badges are driven by generated model metadata:
+
+- `modalities.input` controls text/image/audio/video/pdf visibility
+- `reasoning: true` controls the "Allows reasoning" badge
+- `variants` only control explicit effort levels when a confirmed mapping exists
+
 Recommended:
 
 - **Safe/manual refresh:** `ocg refresh-models`
@@ -137,7 +143,8 @@ Recommended:
 
 ## Current Limitations
 
-- Thinking/reasoning levels per model are not synthesized; they only appear when a real mapping is available
+- Reasoning effort levels are only exposed when a confirmed mapping exists
+- Some multimodal badges may rely on curated hints when Command Code omits capability metadata from its catalog
 - Depends on Command Code endpoints which may change
 
 ## Local Development

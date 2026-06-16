@@ -291,6 +291,12 @@ function applyKnownCapabilityHints(modelId, capabilities) {
         source: "hint.kimi.files",
       }
     }
+    if (next.video.supported === null) {
+      next.video = {
+        supported: true,
+        source: "hint.kimi.video",
+      }
+    }
   }
 
   if (
@@ -301,6 +307,12 @@ function applyKnownCapabilityHints(modelId, capabilities) {
       next.vision = {
         supported: true,
         source: "hint.mimo.native_multimodal",
+      }
+    }
+    if (next.pdf.supported === null) {
+      next.pdf = {
+        supported: true,
+        source: "hint.mimo.pdf",
       }
     }
   }
