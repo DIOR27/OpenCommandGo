@@ -33,7 +33,7 @@ export async function runCli(args) {
       await doctorCommand()
       return
     case "refresh-models":
-      await refreshModelsCommand()
+      await refreshModelsCommand(rest)
       return
     case "stop":
       await stopCommand()
@@ -247,15 +247,66 @@ async function doctorCommand() {
   console.log(`Modelos útiles en catálogo: ${modelCount}`)
 }
 
-async function refreshModelsCommand() {
+async function refreshModelsCommand(args = []) {
+  const options = parseRefreshModelsArgs(args)
   console.log("Refrescando catálogo y compatibilidad de modelos...")
-  const matrix = await refreshModelCatalogNow()
+  const matrix = await refreshModelCatalogNow({
+    probeMode: options.full ? "full" : "fast",
+    concurrency: options.concurrency,
+    onProgress(event) {
+      if (event.type === "catalog") {
+        console.log(`Catálogo: ${event.message}`)
+        return
+      }
+      if (event.type === "model-start") {
+        console.log(`[${event.index}/${event.total}] ${event.model}...`)
+        return
+      }
+      if (event.type === "model-done") {
+        console.log(`  -> ${event.status}`)
+      }
+    },
+  })
   const useful = Object.entries(matrix.models || {})
     .filter(([, info]) => info?.status !== "broken")
     .map(([id]) => id)
   console.log(`Refresh completo. Modelos útiles: ${useful.length}`)
-  const hasNemotron = useful.some(id => id.toLowerCase().includes("nemotron"))
-  console.log(`Nemotron visible: ${hasNemotron ? "sí" : "no"}`)
+}
+
+function parseRefreshModelsArgs(args) {
+  const values = Array.isArray(args) ? args : []
+  let full = false
+  let concurrency = undefined
+
+  for (let index = 0; index < values.length; index += 1) {
+    const value = String(values[index] || "").trim()
+    if (!value) continue
+
+    if (value === "--full") {
+      full = true
+      continue
+    }
+
+    if (value === "--parallel" || value === "--concurrency") {
+      const raw = String(values[index + 1] || "").trim()
+      const parsed = Number(raw)
+      if (Number.isInteger(parsed) && parsed > 0) {
+        concurrency = parsed
+        index += 1
+      }
+      continue
+    }
+
+    const match = value.match(/^--(?:parallel|concurrency)=(\d+)$/)
+    if (match) {
+      const parsed = Number(match[1])
+      if (Number.isInteger(parsed) && parsed > 0) {
+        concurrency = parsed
+      }
+    }
+  }
+
+  return { full, concurrency }
 }
 
 async function stopCommand() {
@@ -388,7 +439,7 @@ Comandos:
   uninstall-shell
   status
   doctor
-  refresh-models
+  refresh-models [--full] [--parallel N]
   set-api-key
   reset-shell-choice
   uninstall`)

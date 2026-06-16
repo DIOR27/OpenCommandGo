@@ -9,20 +9,27 @@ import { clearPid, getRuntimeSettings, readCompatibilityMatrix, writeCompatibili
 import { syncOpenCodeConfig } from "../opencode/config.js"
 import { MODELS, MODEL_SET } from "../shared/models.js"
 import { deriveCatalogFromCompatibility, extractModelRows, fallbackCatalog, normalizeCatalogRows } from "../shared/catalog.js"
+import { resolveContextWindow } from "../shared/context-windows.js"
 
 const IMAGE_TEST_URL = "https://upload.wikimedia.org/wikipedia/commons/thumb/3/3a/Cat03.jpg/320px-Cat03.jpg"
-const MAX_REQUEST_BYTES = 2 * 1024 * 1024
+const MAX_REQUEST_BYTES = 8 * 1024 * 1024
 const UPSTREAM_TIMEOUT_MS = 120000
+const REFRESH_PROBE_TIMEOUT_MS = 25000
 
 let compatibilityMatrix = readCompatibilityMatrix()
 let compatibilityRefreshRunning = false
 let currentServer = null
 let availableCatalog = deriveCatalogFromCompatibility(compatibilityMatrix)
 
-export async function refreshModelCatalogNow() {
+export async function refreshModelCatalogNow(options = {}) {
   const settings = getRuntimeSettings()
   const refreshMs = settings.compatibilityRefreshHours * 60 * 60 * 1000
-  return await maybeRefreshCompatibility("manual", refreshMs, settings, { force: true })
+  return await maybeRefreshCompatibility("manual", refreshMs, settings, {
+    force: true,
+    probeMode: options.probeMode || "full",
+    concurrency: options.concurrency,
+    onProgress: typeof options.onProgress === "function" ? options.onProgress : null,
+  })
 }
 
 export async function startServer() {
@@ -73,14 +80,7 @@ export async function startServer() {
         if (!requireShimAuth(req, res, settings)) return
         return json(res, 200, {
           object: "list",
-          data: availableCatalog.map(model => ({
-            id: model.id,
-            object: "model",
-            created: 0,
-            owned_by: "commandcode-go-shim",
-            name: model.name,
-            context_length: model.context_length,
-          })),
+          data: availableCatalog.map(model => buildModelDescriptor(model, compatibilityMatrix?.models?.[model.id])),
         })
       }
 
@@ -102,11 +102,12 @@ export async function startServer() {
           return json(res, 400, openAIError("model_not_allowed", `Modelo no permitido: ${model || "(vacío)"}`))
         }
 
-        const upstream = await callCommandCodeAlpha(body, model, settings)
         if (body.stream === true) {
+          const upstream = await startCommandCodeAlphaStream(body, model, settings)
           return streamOpenAIResponse(res, model, upstream)
         }
 
+        const upstream = await callCommandCodeAlpha(body, model, settings)
         return json(res, 200, buildOpenAICompletion(model, upstream))
       }
 
@@ -139,46 +140,14 @@ export async function startServer() {
   return server
 }
 
-async function callCommandCodeAlpha(body, model, settings) {
+async function callCommandCodeAlpha(body, model, settings, options = {}) {
   const sessionId = randomUUID()
   const startedAt = Date.now()
-  const messages = toCommandCodeMessages(body.messages)
-  const tools = Array.isArray(body.tools) && body.tools.length > 0
-    ? toCommandCodeTools(body.tools)
-    : []
-  const payload = {
-    mode: "custom-agent",
-    config: buildEnvironmentContext(),
-    memory: "",
-    threadId: sessionId,
-    params: {
-      stream: true,
-      model,
-      max_tokens: typeof body.max_tokens === "number" ? body.max_tokens : 8192,
-      temperature: typeof body.temperature === "number" ? body.temperature : undefined,
-      messages,
-      ...(tools.length > 0 ? { tools } : {}),
-      ...(systemTextFromMessages(body.messages) ? { system: systemTextFromMessages(body.messages) } : {}),
-    },
-  }
+  const payload = buildCommandCodePayload(body, model, sessionId)
 
-  log(`REQUEST start session=${sessionId} model=${model} stream=${body.stream === true} messages=${messages.length} tools=${tools.length}`)
+  log(`REQUEST start session=${sessionId} model=${model} stream=${body.stream === true} messages=${payload.params.messages.length} tools=${payload.params.tools?.length || 0}`)
 
-  const response = await fetch(`${settings.commandCodeBaseUrl}/alpha/generate`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${settings.commandCodeApiKey}`,
-      "x-cli-environment": "production",
-      "x-command-code-version": settings.commandCodeVersion,
-      "x-co-flag": "false",
-      "x-project-slug": "opencode-commandcode-go-shim",
-      "x-session-id": sessionId,
-      "x-taste-learning": "false",
-    },
-    signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
-    body: JSON.stringify(payload),
-  })
+  const response = await fetchCommandCodeAlpha(payload, sessionId, settings, options)
 
   const raw = await response.text()
   if (!response.ok) {
@@ -200,6 +169,74 @@ async function callCommandCodeAlpha(body, model, settings) {
     durationMs: Date.now() - startedAt,
     sessionId,
   }
+}
+
+async function startCommandCodeAlphaStream(body, model, settings) {
+  const sessionId = randomUUID()
+  const startedAt = Date.now()
+  const payload = buildCommandCodePayload(body, model, sessionId)
+
+  log(`REQUEST start session=${sessionId} model=${model} stream=true messages=${payload.params.messages.length} tools=${payload.params.tools?.length || 0}`)
+
+  const response = await fetchCommandCodeAlpha(payload, sessionId, settings)
+  if (!response.ok) {
+    const raw = await response.text()
+    log(`UPSTREAM ${response.status} ${raw}`)
+    throw new Error(`Command Code respondió ${response.status}: ${raw.slice(0, 500)}`)
+  }
+  if (!response.body) {
+    throw new Error("Command Code no devolvió body de streaming")
+  }
+
+  return {
+    sessionId,
+    startedAt,
+    responseBody: response.body,
+  }
+}
+
+function buildCommandCodePayload(body, model, sessionId) {
+  const messages = toCommandCodeMessages(body.messages)
+  const tools = Array.isArray(body.tools) && body.tools.length > 0
+    ? toCommandCodeTools(body.tools)
+    : []
+
+  return {
+    mode: "custom-agent",
+    config: buildEnvironmentContext(),
+    memory: "",
+    threadId: sessionId,
+    params: {
+      stream: true,
+      model,
+      max_tokens: typeof body.max_tokens === "number" ? body.max_tokens : 8192,
+      temperature: typeof body.temperature === "number" ? body.temperature : undefined,
+      messages,
+      ...(tools.length > 0 ? { tools } : {}),
+      ...(systemTextFromMessages(body.messages) ? { system: systemTextFromMessages(body.messages) } : {}),
+    },
+  }
+}
+
+function fetchCommandCodeAlpha(payload, sessionId, settings, options = {}) {
+  const timeoutMs = typeof options.timeoutMs === "number" && options.timeoutMs > 0
+    ? options.timeoutMs
+    : UPSTREAM_TIMEOUT_MS
+  return fetch(`${settings.commandCodeBaseUrl}/alpha/generate`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${settings.commandCodeApiKey}`,
+      "x-cli-environment": "production",
+      "x-command-code-version": settings.commandCodeVersion,
+      "x-co-flag": "false",
+      "x-project-slug": "opencode-commandcode-go-shim",
+      "x-session-id": sessionId,
+      "x-taste-learning": "false",
+    },
+    signal: AbortSignal.timeout(timeoutMs),
+    body: JSON.stringify(payload),
+  })
 }
 
 function toCommandCodeMessages(messages) {
@@ -437,6 +474,48 @@ function parseEventLines(raw) {
     .filter(Boolean)
 }
 
+async function* readCommandCodeEventsFromStream(body) {
+  const reader = body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ""
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+
+      buffer += decoder.decode(value, { stream: true })
+      let boundary = -1
+      while ((boundary = buffer.indexOf("\n")) !== -1) {
+        const line = buffer.slice(0, boundary)
+        buffer = buffer.slice(boundary + 1)
+        const parsed = parseCommandCodeEventLine(line)
+        if (parsed) yield parsed
+      }
+    }
+
+    buffer += decoder.decode()
+    if (buffer.trim()) {
+      const parsed = parseCommandCodeEventLine(buffer)
+      if (parsed) yield parsed
+    }
+  } finally {
+    reader.releaseLock()
+  }
+}
+
+function parseCommandCodeEventLine(line) {
+  const trimmed = String(line || "").trim()
+  if (!trimmed) return null
+  const payload = trimmed.startsWith("data:") ? trimmed.slice(5).trim() : trimmed
+  if (!payload || payload === "[DONE]") return null
+  try {
+    return JSON.parse(payload)
+  } catch {
+    return null
+  }
+}
+
 function buildOpenAICompletion(model, upstream) {
   const id = `chatcmpl-${randomUUID()}`
   const created = Math.floor(Date.now() / 1000)
@@ -474,13 +553,9 @@ function buildOpenAICompletion(model, upstream) {
   }
 }
 
-function streamOpenAIResponse(res, model, upstream) {
+async function streamOpenAIResponse(res, model, upstream) {
   const id = `chatcmpl-${randomUUID()}`
   const created = Math.floor(Date.now() / 1000)
-  const toolCalls = collectToolCalls(upstream.events)
-  const finishReason = toolCalls.length > 0
-    ? "tool_calls"
-    : normalizeFinishReason(upstream.finishReason)
 
   res.writeHead(200, {
     "Content-Type": "text/event-stream; charset=utf-8",
@@ -503,60 +578,96 @@ function streamOpenAIResponse(res, model, upstream) {
     ],
   })
 
+  const toolCalls = new Map()
+  let finishReason = "stop"
+  let usage = null
   let sentText = false
-  for (const event of upstream.events) {
-    const type = String(event.type || event.event || "").toLowerCase()
-    if (type === "text-delta" || type === "text_delta" || type === "output_text_delta") {
-      const text = eventText(event)
-      if (!text) continue
-      sentText = true
-      writeSSE(res, {
-        id,
-        object: "chat.completion.chunk",
-        created,
-        model,
-        choices: [
-          {
-            index: 0,
-            delta: { content: text },
-            finish_reason: null,
-          },
-        ],
-      })
-    }
-  }
+  let toolIndex = 0
 
-  if (toolCalls.length > 0) {
-    toolCalls.forEach((toolCall, index) => {
-      writeSSE(res, {
-        id,
-        object: "chat.completion.chunk",
-        created,
-        model,
-        choices: [
-          {
-            index: 0,
-            delta: {
-              tool_calls: [
-                {
-                  index,
-                  id: toolCall.id,
-                  type: "function",
-                  function: {
-                    name: toolCall.function.name,
-                    arguments: toolCall.function.arguments,
-                  },
-                },
-              ],
+  try {
+    for await (const event of readCommandCodeEventsFromStream(upstream.responseBody)) {
+      const type = String(event.type || event.event || "").toLowerCase()
+
+      if (type === "error") {
+        throw new Error(`Command Code stream error: ${jsonString(event.error ?? event.message ?? event)}`)
+      }
+
+      if (type === "text-delta" || type === "text_delta" || type === "output_text_delta") {
+        const text = eventText(event)
+        if (!text) continue
+        sentText = true
+        writeSSE(res, {
+          id,
+          object: "chat.completion.chunk",
+          created,
+          model,
+          choices: [
+            {
+              index: 0,
+              delta: { content: text },
+              finish_reason: null,
             },
-            finish_reason: null,
+          ],
+        })
+        continue
+      }
+
+      if (type === "tool-call" || type === "tool_call") {
+        const callId = event.toolCallId || event.tool_call_id || event.id || `call_${randomUUID()}`
+        const callName = event.toolName || event.tool_name || event.name || "tool"
+        const rawInput = event.input ?? event.args ?? event.arguments ?? {}
+        const normalizedInput = typeof rawInput === "string" ? parseJsonString(rawInput) : rawInput
+        const argumentString = jsonString(normalizedInput)
+        toolCalls.set(callId, {
+          id: callId,
+          type: "function",
+          function: {
+            name: callName,
+            arguments: argumentString,
           },
-        ],
-      })
-    })
+        })
+        writeSSE(res, {
+          id,
+          object: "chat.completion.chunk",
+          created,
+          model,
+          choices: [
+            {
+              index: 0,
+              delta: {
+                tool_calls: [
+                  {
+                    index: toolIndex,
+                    id: callId,
+                    type: "function",
+                    function: {
+                      name: callName,
+                      arguments: argumentString,
+                    },
+                  },
+                ],
+              },
+              finish_reason: null,
+            },
+          ],
+        })
+        toolIndex += 1
+        continue
+      }
+
+      if (type === "finish" || type === "done" || type === "message_stop") {
+        finishReason = toolCalls.size > 0
+          ? "tool_calls"
+          : normalizeFinishReason(event.finishReason ?? event.finish_reason ?? event.rawFinishReason)
+        usage = normalizeUsage(extractUsage(event.totalUsage ?? event.total_usage ?? event.usage ?? null))
+      }
+    }
+  } catch (error) {
+    log(`STREAM ERROR session=${upstream.sessionId} model=${model} error=${error instanceof Error ? error.message : String(error)}`)
+    finishReason = "stop"
   }
 
-  if (!sentText && toolCalls.length === 0) {
+  if (!sentText && toolCalls.size === 0) {
     writeSSE(res, {
       id,
       object: "chat.completion.chunk",
@@ -584,8 +695,9 @@ function streamOpenAIResponse(res, model, upstream) {
         finish_reason: finishReason,
       },
     ],
-    usage: normalizeUsage(upstream.usage),
+    ...(usage ? { usage } : {}),
   })
+  log(`REQUEST done session=${upstream.sessionId} model=${model} duration_ms=${Date.now() - upstream.startedAt} stream=true`)
   res.write("data: [DONE]\n\n")
   res.end()
 }
@@ -776,30 +888,83 @@ async function maybeRefreshCompatibility(reason, refreshMs, settings, options = 
   compatibilityRefreshRunning = true
   log(`COMPAT refresh_start reason=${reason}`)
   try {
+    options.onProgress?.({
+      type: "catalog",
+      message: "consultando modelos...",
+    })
     const catalog = await fetchAvailableCatalog(settings)
+    options.onProgress?.({
+      type: "catalog",
+      message: `${catalog.length} modelos detectados`,
+    })
     const next = {
       updated_at: new Date().toISOString(),
       refresh_interval_hours: settings.compatibilityRefreshHours,
       models: {},
     }
+    const probeMode = options.probeMode === "fast" ? "fast" : "full"
+    const concurrency = resolveRefreshConcurrency(options.concurrency, probeMode, catalog.length)
+    let nextIndex = 0
 
-    for (const { id, name, context_length } of catalog) {
-      const tested = await testModelCompatibility(id, name, settings)
-      tested.context_length = context_length
+    const runOne = async rowIndex => {
+      const row = catalog[rowIndex]
+      const { id, name, context_length, catalog_capabilities } = row
+      options.onProgress?.({
+        type: "model-start",
+        index: rowIndex + 1,
+        total: catalog.length,
+        model: id,
+      })
+
+      const tested = await testModelCompatibility(id, name, settings, {
+        catalogCapabilities: catalog_capabilities,
+        probeMode,
+      })
+      tested.context_length = resolveContextWindow(id, context_length)
       const previous = compatibilityMatrix?.models?.[id]
+
       if (shouldPreservePreviousCompatibility(tested, previous)) {
         next.models[id] = {
           ...previous,
           name,
-          context_length,
+          context_length: resolveContextWindow(id, context_length),
+          capabilities: mergeCapabilities(previous?.capabilities, tested.capabilities),
           tested_at: tested.tested_at,
           last_probe_status: tested.status,
           last_probe_notes: tested.notes,
         }
-        continue
+        options.onProgress?.({
+          type: "model-done",
+          index: rowIndex + 1,
+          total: catalog.length,
+          model: id,
+          status: next.models[id].status,
+        })
+        return
       }
+
       next.models[id] = tested
+      options.onProgress?.({
+        type: "model-done",
+        index: rowIndex + 1,
+        total: catalog.length,
+        model: id,
+        status: tested.status,
+      })
     }
+
+    const worker = async () => {
+      while (true) {
+        const rowIndex = nextIndex
+        nextIndex += 1
+        if (rowIndex >= catalog.length) return
+        await runOne(rowIndex)
+      }
+    }
+
+    await Promise.all(
+      Array.from({ length: concurrency }, () => worker()),
+    )
 
     compatibilityMatrix = next
     availableCatalog = deriveCatalogFromCompatibility(compatibilityMatrix)
@@ -842,15 +1007,29 @@ async function fetchAvailableCatalog(settings) {
   return fallbackCatalog()
 }
 
-async function testModelCompatibility(model, displayName, settings) {
+async function testModelCompatibility(model, displayName, settings, options = {}) {
+  const catalogVision = normalizeCatalogVisionCapability(options.catalogCapabilities?.vision)
+  const probeMode = options.probeMode === "fast" ? "fast" : "full"
+  const probeTimeoutMs = probeMode === "fast" ? REFRESH_PROBE_TIMEOUT_MS : UPSTREAM_TIMEOUT_MS
   const summary = {
     name: displayName,
     tested_at: new Date().toISOString(),
     status: "unknown",
     text: { ok: false, output_chars: 0 },
-    image: { ok: false, output_chars: 0 },
+    image: {
+      ok: false,
+      output_chars: 0,
+      source: catalogVision.supported === null ? "probe" : catalogVision.source,
+    },
     reasoning: { ok: false, chars: 0 },
     tools: { ok: false, calls: 0 },
+    capabilities: {
+      vision: {
+        supported: catalogVision.supported,
+        source: catalogVision.source,
+      },
+      pdf: normalizeCatalogFileCapability(options.catalogCapabilities?.pdf),
+    },
     notes: [],
   }
 
@@ -859,7 +1038,7 @@ async function testModelCompatibility(model, displayName, settings) {
       messages: [{ role: "user", content: "Reply exactly: OK" }],
       stream: false,
       max_tokens: 64,
-    }, model, settings)
+    }, model, settings, { timeoutMs: probeTimeoutMs })
     const text = collectText(textRun.events).trim()
     summary.text = { ok: text.length > 0, output_chars: text.length }
     if (!text.length) summary.notes.push("No devolvió texto en prompt mínimo.")
@@ -867,91 +1046,172 @@ async function testModelCompatibility(model, displayName, settings) {
     summary.notes.push(`Text error: ${error instanceof Error ? error.message : String(error)}`)
   }
 
-  try {
-    const imageRun = await callCommandCodeAlpha({
-      messages: [
-        {
-          role: "user",
-          content: [
-            { type: "text", text: "Describe this image in one short sentence. If you cannot see it, say EXACTLY: NO_IMAGE_INPUT" },
-            {
-              type: "image_url",
-              image_url: {
-                url: IMAGE_TEST_URL,
-              },
-            },
-          ],
-        },
-      ],
-      stream: false,
-      max_tokens: 96,
-    }, model, settings)
-    const imageText = collectText(imageRun.events).trim()
-    const lower = imageText.toLowerCase()
-    const indicatesNoImage =
-      lower.includes("no_image_input")
-      || lower.includes("no veo ninguna imagen")
-      || lower.includes("no image")
-      || lower.includes("can't see")
-      || lower.includes("cannot see")
-      || lower.includes("didn't attach")
-    const imageOk = imageText.length > 0 && !indicatesNoImage
-    summary.image = { ok: imageOk, output_chars: imageText.length }
-    if (!imageText.length) summary.notes.push("No devolvió texto útil para imagen.")
-    if (indicatesNoImage) summary.notes.push("Respondió como si no hubiera imagen disponible.")
-  } catch (error) {
-    summary.notes.push(`Image error: ${error instanceof Error ? error.message : String(error)}`)
-  }
-
-  try {
-    const reasoningRun = await callCommandCodeAlpha({
-      messages: [{ role: "user", content: "Think step by step and answer 17*19. Keep the final answer short." }],
-      stream: false,
-      max_tokens: 256,
-    }, model, settings)
-    const reasoning = collectReasoning(reasoningRun.events)
-    summary.reasoning = { ok: reasoning.length > 0, chars: reasoning.length }
-    if (!reasoning.length) summary.notes.push("No emitió reasoning visible.")
-  } catch (error) {
-    summary.notes.push(`Reasoning error: ${error instanceof Error ? error.message : String(error)}`)
-  }
-
-  try {
-    const tool = {
-      type: "function",
-      function: {
-        name: "echo",
-        description: "Echo text",
-        parameters: {
-          type: "object",
-          properties: { text: { type: "string" } },
-          required: ["text"],
-        },
-      },
+  if (catalogVision.supported !== null) {
+    summary.image.ok = catalogVision.supported
+    summary.capabilities.vision = {
+      supported: catalogVision.supported,
+      source: catalogVision.source,
     }
-    const toolRun = await callCommandCodeAlpha({
-      messages: [{ role: "user", content: "Use the echo tool with text hello and no other text." }],
-      tools: [tool],
-      tool_choice: "auto",
-      stream: false,
-      max_tokens: 128,
-    }, model, settings)
-    const toolCalls = collectToolCalls(toolRun.events)
-    summary.tools = { ok: toolCalls.length > 0, calls: toolCalls.length }
-    if (!toolCalls.length) summary.notes.push("No emitió tool calls.")
-  } catch (error) {
-    summary.notes.push(`Tools error: ${error instanceof Error ? error.message : String(error)}`)
+    if (catalogVision.supported === false) {
+      summary.notes.push(`Catálogo marcó visión no soportada (${catalogVision.source}).`)
+    }
+  } else {
+    try {
+      const imageRun = await callCommandCodeAlpha({
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "text", text: "Describe this image in one short sentence. If you cannot see it, say EXACTLY: NO_IMAGE_INPUT" },
+              {
+                type: "image_url",
+                image_url: {
+                  url: IMAGE_TEST_URL,
+                },
+              },
+            ],
+          },
+        ],
+        stream: false,
+        max_tokens: 96,
+      }, model, settings, { timeoutMs: probeTimeoutMs })
+      const imageText = collectText(imageRun.events).trim()
+      const lower = imageText.toLowerCase()
+      const indicatesNoImage =
+        lower.includes("no_image_input")
+        || lower.includes("no veo ninguna imagen")
+        || lower.includes("no image")
+        || lower.includes("can't see")
+        || lower.includes("cannot see")
+        || lower.includes("didn't attach")
+      const imageOk = imageText.length > 0 && !indicatesNoImage
+      summary.image = {
+        ok: imageOk,
+        output_chars: imageText.length,
+        source: "probe",
+      }
+      summary.capabilities.vision = {
+        supported: imageOk,
+        source: "probe",
+      }
+      if (!imageText.length) summary.notes.push("No devolvió texto útil para imagen.")
+      if (indicatesNoImage) summary.notes.push("Respondió como si no hubiera imagen disponible.")
+    } catch (error) {
+      if (summary.capabilities.vision.supported === null) {
+        summary.capabilities.vision = {
+          supported: false,
+          source: "probe_error",
+        }
+      }
+      summary.notes.push(`Image error: ${error instanceof Error ? error.message : String(error)}`)
+    }
   }
 
-  const capabilities = [summary.text.ok, summary.image.ok, summary.reasoning.ok, summary.tools.ok].filter(Boolean).length
+  if (probeMode === "full") {
+    try {
+      const reasoningRun = await callCommandCodeAlpha({
+        messages: [{ role: "user", content: "Think step by step and answer 17*19. Keep the final answer short." }],
+        stream: false,
+        max_tokens: 256,
+      }, model, settings, { timeoutMs: probeTimeoutMs })
+      const reasoning = collectReasoning(reasoningRun.events)
+      summary.reasoning = { ok: reasoning.length > 0, chars: reasoning.length }
+      if (!reasoning.length) summary.notes.push("No emitió reasoning visible.")
+    } catch (error) {
+      summary.notes.push(`Reasoning error: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  } else {
+    summary.notes.push("Reasoning probe omitido en modo fast.")
+  }
+
+  if (probeMode === "full") {
+    try {
+      const tool = {
+        type: "function",
+        function: {
+          name: "echo",
+          description: "Echo text",
+          parameters: {
+            type: "object",
+            properties: { text: { type: "string" } },
+            required: ["text"],
+          },
+        },
+      }
+      const toolRun = await callCommandCodeAlpha({
+        messages: [{ role: "user", content: "Use the echo tool with text hello and no other text." }],
+        tools: [tool],
+        tool_choice: "auto",
+        stream: false,
+        max_tokens: 128,
+      }, model, settings, { timeoutMs: probeTimeoutMs })
+      const toolCalls = collectToolCalls(toolRun.events)
+      summary.tools = { ok: toolCalls.length > 0, calls: toolCalls.length }
+      if (!toolCalls.length) summary.notes.push("No emitió tool calls.")
+    } catch (error) {
+      summary.notes.push(`Tools error: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  } else {
+    summary.notes.push("Tools probe omitido en modo fast.")
+  }
+
+  const capabilitySignals = probeMode === "full"
+    ? [summary.text.ok, summary.image.ok, summary.reasoning.ok, summary.tools.ok]
+    : [summary.text.ok, summary.image.ok]
+  const capabilities = capabilitySignals.filter(Boolean).length
   const quotaBlocked = summary.notes.some(note => isInsufficientCreditsMessage(note))
   summary.status =
     quotaBlocked ? "quota_blocked"
-    : capabilities >= 3 ? "ok"
-    : capabilities > 0 ? "degraded"
-    : "broken"
+    : probeMode === "full"
+      ? capabilities >= 3 ? "ok" : capabilities > 0 ? "degraded" : "broken"
+      : capabilities >= 2 ? "ok" : capabilities > 0 ? "degraded" : "broken"
+    
 
   return summary
+}
+
+function resolveRefreshConcurrency(value, probeMode, modelCount) {
+  const fallback = probeMode === "full" ? 2 : 4
+  const parsed = Number(value)
+  const normalized = Number.isInteger(parsed) && parsed > 0 ? parsed : fallback
+  return Math.max(1, Math.min(normalized, Math.max(1, modelCount)))
+}
+
+function normalizeCatalogVisionCapability(vision) {
+  if (!vision || typeof vision !== "object") {
+    return { supported: null, source: null }
+  }
+  return {
+    supported: typeof vision.supported === "boolean" ? vision.supported : null,
+    source: typeof vision.source === "string" && vision.source.trim() ? vision.source.trim() : null,
+  }
+}
+
+function normalizeCatalogFileCapability(fileCapability) {
+  if (!fileCapability || typeof fileCapability !== "object") {
+    return { supported: null, source: null }
+  }
+  return {
+    supported: typeof fileCapability.supported === "boolean" ? fileCapability.supported : null,
+    source: typeof fileCapability.source === "string" && fileCapability.source.trim() ? fileCapability.source.trim() : null,
+  }
+}
+
+function mergeCapabilities(previous, next) {
+  const prev = previous && typeof previous === "object" ? previous : {}
+  const current = next && typeof next === "object" ? next : {}
+  return {
+    ...prev,
+    ...current,
+    vision: {
+      ...(prev.vision && typeof prev.vision === "object" ? prev.vision : {}),
+      ...(current.vision && typeof current.vision === "object" ? current.vision : {}),
+    },
+    pdf: {
+      ...(prev.pdf && typeof prev.pdf === "object" ? prev.pdf : {}),
+      ...(current.pdf && typeof current.pdf === "object" ? current.pdf : {}),
+    },
+  }
 }
 
 function extractUsage(usage) {
@@ -1112,4 +1372,60 @@ function getRequestShimToken(req) {
 function isLoopbackHost(host) {
   const normalized = String(host || "").trim().toLowerCase()
   return ["127.0.0.1", "localhost", "::1"].includes(normalized)
+}
+
+function buildModelDescriptor(model, compat) {
+  const contextWindow = resolveContextWindow(model.id, model.context_length)
+  const supportsVision = supportsVisionInput(compat)
+  return {
+    id: model.id,
+    object: "model",
+    created: 0,
+    owned_by: "commandcode-go-shim",
+    name: model.name,
+    context_length: contextWindow,
+    limit: {
+      context: contextWindow,
+      output: 32768,
+    },
+    modalities: {
+      input: supportsVision ? ["text", "image"] : ["text"],
+      output: ["text"],
+    },
+    capabilities: {
+      vision: {
+        supported: supportsVision,
+        source: resolveVisionSource(compat),
+      },
+      pdf: {
+        supported: supportsPdfHint(compat),
+        source: resolvePdfSource(compat),
+      },
+    },
+    status: compat?.status || "unknown",
+  }
+}
+
+function supportsVisionInput(compat) {
+  if (!compat || typeof compat !== "object") return false
+  const vision = compat.capabilities?.vision
+  if (vision && typeof vision === "object" && typeof vision.supported === "boolean") {
+    return vision.supported
+  }
+  return compat?.image?.ok === true
+}
+
+function resolveVisionSource(compat) {
+  const source = compat?.capabilities?.vision?.source
+  return typeof source === "string" && source.trim() ? source.trim() : null
+}
+
+function supportsPdfHint(compat) {
+  const supported = compat?.capabilities?.pdf?.supported
+  return typeof supported === "boolean" ? supported : null
+}
+
+function resolvePdfSource(compat) {
+  const source = compat?.capabilities?.pdf?.source
+  return typeof source === "string" && source.trim() ? source.trim() : null
 }

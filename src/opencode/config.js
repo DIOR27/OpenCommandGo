@@ -3,6 +3,7 @@ import { join } from "node:path"
 import { getPaths, ensureParentDir } from "../config/paths.js"
 import { readSecrets } from "../config/store.js"
 import { deriveCatalogFromCompatibility, fallbackCatalog } from "../shared/catalog.js"
+import { resolveContextWindow } from "../shared/context-windows.js"
 
 export function detectOpenCodeInstallations() {
   const paths = getPaths()
@@ -61,20 +62,50 @@ function buildModelConfig(compatibilityMatrix) {
   for (const { id, name, context_length } of catalog.length > 0 ? catalog : fallbackCatalog()) {
     const compat = compatibilityMatrix?.models?.[id]
     if (compat?.status === "broken") continue
-    const supportsImage = !!compat?.image?.ok
+    const supportsImage = supportsVisionInput(compat)
+    const contextWindow = resolveContextWindow(id, context_length)
     models[id] = {
       name,
       limit: {
-        context: context_length || 200000,
+        context: contextWindow,
         output: 32768,
       },
       modalities: {
         input: supportsImage ? ["text", "image"] : ["text"],
         output: ["text"],
       },
+      capabilities: {
+        vision: {
+          supported: supportsImage,
+          source: resolveCapabilitySource(compat, "vision"),
+        },
+        pdf: {
+          supported: resolveCapabilitySupport(compat, "pdf"),
+          source: resolveCapabilitySource(compat, "pdf"),
+        },
+      },
     }
   }
   return models
+}
+
+function supportsVisionInput(compat) {
+  if (!compat || typeof compat !== "object") return false
+  const vision = compat.capabilities?.vision
+  if (vision && typeof vision === "object" && typeof vision.supported === "boolean") {
+    return vision.supported
+  }
+  return compat?.image?.ok === true
+}
+
+function resolveCapabilitySupport(compat, key) {
+  const supported = compat?.capabilities?.[key]?.supported
+  return typeof supported === "boolean" ? supported : null
+}
+
+function resolveCapabilitySource(compat, key) {
+  const source = compat?.capabilities?.[key]?.source
+  return typeof source === "string" && source.trim() ? source.trim() : null
 }
 
 function readJson(file) {

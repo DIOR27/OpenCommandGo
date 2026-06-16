@@ -41,6 +41,9 @@ ccga autostart status
 ccga status
 ccga doctor
 ccga refresh-models
+ccga refresh-models --full
+ccga refresh-models --parallel 6
+ccga refresh-models --full --parallel 2
 ccga set-api-key
 ccga open-path "C:\\path\\to\\folder"
 ccga open-with desktop "C:\\path\\to\\folder"
@@ -126,6 +129,17 @@ To force an update:
 ```powershell
 ccga refresh-models
 ```
+
+Available modes:
+
+- `ccga refresh-models` → fast probe, now in parallel by default
+- `ccga refresh-models --full` → complete probe (text + image + reasoning + tools)
+- `ccga refresh-models --parallel 6` → override the worker count
+
+Recommended:
+
+- Fast/manual refresh: `ccga refresh-models`
+- Deep validation when you want to audit the matrix: `ccga refresh-models --full --parallel 2`
 
 ## Security
 
