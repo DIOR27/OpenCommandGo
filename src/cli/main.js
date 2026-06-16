@@ -354,7 +354,12 @@ async function stopCommand() {
   // Case 1: PID saved and process alive — graceful shutdown
   if (savedPid && isProcessAlive(savedPid)) {
     console.log(t("stop.graceful", savedPid))
-    await gracefulKill(savedPid, { onForceTimeout: () => console.log(t("stop.graceful_timeout")) })
+    const shutdownUrl = `http://${settings.host}:${settings.port}/shutdown`
+    await gracefulKill(savedPid, {
+      onForceTimeout: () => console.log(t("stop.graceful_timeout")),
+      shutdownUrl,
+      shutdownToken: settings.shimAccessToken,
+    })
     clearPid()
     console.log(t("stop.stopped", savedPid))
     return
@@ -382,7 +387,12 @@ async function stopCommand() {
   }
 
   console.log(t("stop.found_by_port", foundPid, settings.port))
-  await gracefulKill(foundPid, { onForceTimeout: () => console.log(t("stop.graceful_timeout")) })
+  const shutdownUrl = `http://${settings.host}:${settings.port}/shutdown`
+  await gracefulKill(foundPid, {
+    onForceTimeout: () => console.log(t("stop.graceful_timeout")),
+    shutdownUrl,
+    shutdownToken: settings.shimAccessToken,
+  })
   clearPid()
   console.log(t("stop.killed_by_port", settings.port, foundPid))
 }

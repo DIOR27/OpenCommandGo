@@ -46,11 +46,9 @@ describe("sleep", () => {
 })
 
 // ---------------------------------------------------------------------------
-// findPidByPort (Windows code path — tested on this platform)
+// findPidByPort (Windows code path)
 // ---------------------------------------------------------------------------
-describe("findPidByPort — Windows", () => {
-  // All tests pass the mock execFileSync via dependency injection
-
+describe("findPidByPort - Windows", () => {
   it("returns PID from PowerShell Get-NetTCPConnection output", () => {
     const mockExec = (cmd) => {
       if (cmd === "powershell") return "12345\n"
@@ -97,7 +95,6 @@ describe("findPidByPort — Windows", () => {
       return ""
     }
     const pid = findPidByPort(4310, { execFileSync: mockExec })
-    // Falls through to netstat which also returns nothing → null
     assert.strictEqual(pid, null)
   })
 
@@ -131,9 +128,100 @@ describe("gracefulKill", () => {
     assert.strictEqual(result, true)
   })
 
+  it("Phase 0: attempts /shutdown endpoint when shutdownUrl is provided", async () => {
+    const mockFetch = mock.method(global, "fetch", () =>
+      Promise.resolve({ ok: true })
+    )
+
+    let callCount = 0
+    mock.method(process, "kill", () => {
+      callCount++
+      if (callCount <= 1) return
+      throw new Error("ESRCH")
+    })
+
+    const result = await gracefulKill(42, {
+      timeoutMs: 100,
+      shutdownUrl: "http://127.0.0.1:4310/shutdown",
+      shutdownToken: "test-token",
+    })
+    assert.strictEqual(result, true)
+
+    assert.ok(mockFetch.mock.calls.length >= 1)
+    assert.strictEqual(
+      mockFetch.mock.calls[0].arguments[0],
+      "http://127.0.0.1:4310/shutdown"
+    )
+  })
+
+  it("Phase 0: falls through to Phase 1+2 when /shutdown fails", async () => {
+    mock.method(global, "fetch", () => Promise.reject(new Error("ECONNREFUSED")))
+
+    mock.method(process, "kill", () => {})
+
+    let forceKillCalled = false
+    const mockExec = (cmd, args) => {
+      if (cmd === "taskkill" && args && args[0] === "/F") {
+        forceKillCalled = true
+        return ""
+      }
+      return ""
+    }
+
+    const result = await gracefulKill(42, {
+      timeoutMs: 100,
+      execFileSync: mockExec,
+      shutdownUrl: "http://127.0.0.1:4310/shutdown",
+      shutdownToken: "test-token",
+    })
+    assert.strictEqual(result, false)
+    assert.strictEqual(forceKillCalled, true)
+  })
+
+  it("Phase 0: returns true when /shutdown succeeds and process dies", async () => {
+    mock.method(global, "fetch", () => Promise.resolve({ ok: true }))
+
+    let callCount = 0
+    mock.method(process, "kill", () => {
+      callCount++
+      if (callCount <= 1) return
+      throw new Error("ESRCH")
+    })
+
+    const result = await gracefulKill(42, {
+      timeoutMs: 100,
+      shutdownUrl: "http://127.0.0.1:4310/shutdown",
+      shutdownToken: "test-token",
+    })
+    assert.strictEqual(result, true)
+  })
+
+  it("Phase 0: sends x-ocg-token header in /shutdown request", async () => {
+    let capturedHeaders = null
+    mock.method(global, "fetch", (url, opts) => {
+      capturedHeaders = opts.headers
+      return Promise.resolve({ ok: true })
+    })
+
+    let callCount = 0
+    mock.method(process, "kill", () => {
+      callCount++
+      if (callCount <= 1) return
+      throw new Error("ESRCH")
+    })
+
+    await gracefulKill(42, {
+      timeoutMs: 100,
+      shutdownUrl: "http://127.0.0.1:4310/shutdown",
+      shutdownToken: "my-token-123",
+    })
+
+    assert.ok(capturedHeaders)
+    assert.strictEqual(capturedHeaders["x-ocg-token"], "my-token-123")
+  })
+
   it("Phase 1: sends taskkill /PID, returns true on graceful exit", async () => {
     let callCount = 0
-    // isProcessAlive: first call returns alive, second call throws (process dead after graceful kill)
     mock.method(process, "kill", () => {
       callCount++
       if (callCount <= 1) return
@@ -141,7 +229,7 @@ describe("gracefulKill", () => {
     })
 
     const mockExec = (cmd) => {
-      if (cmd === "taskkill") return "" // taskkill succeeds
+      if (cmd === "taskkill") return ""
       return ""
     }
 
@@ -164,10 +252,9 @@ describe("gracefulKill", () => {
     const mockExec = (cmd, args) => {
       if (cmd === "taskkill" && args && args[0] === "/F") {
         forceKillCalled = true
-        alive = false // process is now dead
+        alive = false
         return ""
       }
-      // taskkill without /F — graceful attempt, doesn't kill
       return ""
     }
 
@@ -182,9 +269,7 @@ describe("gracefulKill", () => {
   })
 
   it("returns false if both graceful and force kill fail", async () => {
-    // Process always alive — kill always succeeds (never ESRCH)
     mock.method(process, "kill", () => {})
-
     const mockExec = () => { throw new Error("access denied") }
 
     const result = await gracefulKill(42, {

@@ -96,14 +96,34 @@ export function findPidByPort(port, { execFileSync: _exec } = {}) {
   return null
 }
 
-export async function gracefulKill(pid, { timeoutMs = 3000, onForceTimeout, execFileSync: _exec } = {}) {
+export async function gracefulKill(pid, { timeoutMs = 3000, onForceTimeout, execFileSync: _exec, shutdownUrl, shutdownToken } = {}) {
   const exec = _exec || execFileSync
   if (!isProcessAlive(pid)) return true
 
-  // Phase 1: graceful shutdown
+  // Phase 0: try HTTP /shutdown endpoint first
+  if (shutdownUrl && shutdownToken) {
+    try {
+      const response = await fetch(shutdownUrl, {
+        method: "POST",
+        headers: {
+          "x-ocg-token": shutdownToken,
+          "Content-Type": "application/json",
+        },
+        signal: AbortSignal.timeout(3000),
+      })
+      if (response.ok) {
+        // Wait for the process to exit after receiving shutdown signal
+        await sleep(1500)
+        if (!isProcessAlive(pid)) return true
+      }
+    } catch {
+      // /shutdown not available or failed — fall through
+    }
+  }
+
+  // Phase 1: graceful shutdown (taskkill /PID or SIGTERM)
   try {
     if (process.platform === "win32") {
-      // taskkill without /F sends WM_CLOSE for graceful shutdown
       exec("taskkill", ["/PID", String(pid)], {
         timeout: 5000,
         stdio: ["ignore", "pipe", "ignore"],

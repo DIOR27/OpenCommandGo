@@ -1,5 +1,5 @@
 import { createServer } from "node:http"
-import { appendFileSync, existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs"
+import { appendFileSync, existsSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs"
 import { execFileSync } from "node:child_process"
 import { homedir } from "node:os"
 import { join } from "node:path"
@@ -15,6 +15,8 @@ import { t } from "../shared/i18n.js"
 
 const IMAGE_TEST_URL = "https://upload.wikimedia.org/wikipedia/commons/thumb/3/3a/Cat03.jpg/320px-Cat03.jpg"
 const MAX_REQUEST_BYTES = 8 * 1024 * 1024
+const MAX_LOG_BYTES = 5 * 1024 * 1024
+const MAX_LOG_FILES = 5
 const UPSTREAM_TIMEOUT_MS = 120000
 const REFRESH_PROBE_TIMEOUT_MS = 25000
 
@@ -72,6 +74,23 @@ export async function startServer() {
           models: availableCatalog.map(({ id, name }) => ({ id, name })),
           compatibility_updated_at: compatibilityMatrix.updated_at || null,
         })
+      }
+
+      if (req.method === "POST" && url.pathname === "/shutdown") {
+        if (!requireShimAuth(req, res, settings)) return
+        log("SHUTDOWN requested via /shutdown endpoint")
+        json(res, 200, { ok: true, message: "Shutting down" })
+        setImmediate(() => {
+          clearPid()
+          if (currentServer) {
+            currentServer.close(() => {
+              process.exit(0)
+            })
+          } else {
+            process.exit(0)
+          }
+        })
+        return
       }
 
       if (req.method === "GET" && url.pathname === "/compatibility") {
@@ -874,7 +893,27 @@ function writeSSE(res, payload) {
 function log(line) {
   const paths = getPaths()
   ensureDir(paths.logDir)
+  rotateLogIfNeeded(paths.logFile)
   appendFileSync(paths.logFile, `[${new Date().toISOString()}] ${line}\n`)
+}
+
+function rotateLogIfNeeded(logFile) {
+  try {
+    const stats = statSync(logFile)
+    if (stats.size < MAX_LOG_BYTES) return
+  } catch {
+    // File doesn't exist yet
+    return
+  }
+
+  // Shift old logs: .4 → delete, .3 → .4, .2 → .3, .1 → .2
+  try { unlinkSync(`${logFile}.${MAX_LOG_FILES - 1}`) } catch {}
+  for (let i = MAX_LOG_FILES - 2; i >= 1; i--) {
+    try {
+      renameSync(`${logFile}.${i}`, `${logFile}.${i + 1}`)
+    } catch {}
+  }
+  renameSync(logFile, `${logFile}.1`)
 }
 
 function scheduleCompatibilityRefresh(refreshMs, settings) {
