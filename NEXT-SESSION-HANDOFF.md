@@ -7,7 +7,13 @@
 - Model refresh supports catalog-only sync, `--probe`, `--full`, `--parallel`, and confirmation gating for token-spending probes.
 - Runtime exposes watchdog-assisted background start, `/shutdown`, log files, and reset flow.
 - README was aligned with the current runtime commands and release workflow files.
-- Focused tests were added for CLI refresh parsing and watchdog restart counting.
+- Focused CLI helper tests were added for refresh parsing and watchdog restart counting.
+- Real isolated integration tests now cover:
+  - `ocg start --background`
+  - duplicate-start protection
+  - `ocg stop`
+  - `ocg logs` + `--watchdog` + basic `--follow`
+  - watchdog crash recovery
 
 ## Verified current state
 
@@ -15,6 +21,8 @@
   - `C:\Users\diego\OneDrive\Documentos\commandcode-go-around\src\cli\main.js`
   - `C:\Users\diego\OneDrive\Documentos\commandcode-go-around\src\runtime\server.js`
   - `C:\Users\diego\OneDrive\Documentos\commandcode-go-around\src\watchdog\index.js`
+- Integration harness lives in:
+  - `C:\Users\diego\OneDrive\Documentos\commandcode-go-around\test\cli-integration.test.js`
 - Existing workflow files:
   - `C:\Users\diego\OneDrive\Documentos\commandcode-go-around\.github\workflows\ci.yml`
   - `C:\Users\diego\OneDrive\Documentos\commandcode-go-around\.github\workflows\publish.yml`
@@ -22,10 +30,10 @@
 
 ## Still missing / next phase
 
-1. Real CLI integration tests for `ocg start --background`, `ocg stop`, `ocg logs`, and watchdog recovery.
-2. Stronger verification around OpenCode capability badges versus what upstream Command Code exposes.
-3. Optional cleanup/refactor of `src/runtime/server.js`, which is still carrying too many responsibilities.
-4. Decide if release automation policy should stay tag-driven + develop auto-release exactly as committed.
+1. Stronger verification around OpenCode capability badges versus what upstream Command Code exposes.
+2. Cleanup/refactor of `C:\Users\diego\OneDrive\Documentos\commandcode-go-around\src\runtime\server.js`, which still carries too many responsibilities.
+3. Decide whether watchdog timing env overrides stay as internal/test-only behavior or should be documented explicitly.
+4. Optionally extend integration coverage to real chat/completions behavior against a mocked `/alpha/generate` upstream.
 
 ## Important constraints
 
