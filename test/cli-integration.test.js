@@ -143,6 +143,266 @@ describe("ocg CLI integration", () => {
   })
 })
 
+describe("ocg chat/completions integration", () => {
+  it("bridges a non-stream text completion and preserves usage/meta", { timeout: 20000 }, async () => {
+    const mock = await startMockCommandCodeServer()
+    const ctx = createIsolatedCliContext(await getFreePort(), mock.port)
+    registerCleanup(ctx, mock)
+
+    await runCli(["start", "--background"], ctx.env)
+    const secrets = readJson(ctx.paths.secretsFile)
+    await waitForHealth(ctx.port, secrets.shimAccessToken)
+
+    mock.enqueueAlphaResponse({
+      status: 200,
+      body: sseText([
+        { type: "text-delta", text: "Hola " },
+        { type: "text-delta", text: "mundo" },
+        { type: "finish", finishReason: "stop", totalUsage: { inputTokens: 11, outputTokens: 7 } },
+      ]),
+    })
+
+    const response = await postJson(`http://127.0.0.1:${ctx.port}/v1/chat/completions`, {
+      model: "xiaomi/MiMo-V2.5",
+      messages: [
+        { role: "system", content: "Respondé en español." },
+        { role: "user", content: "Decí hola mundo" },
+      ],
+      max_tokens: 123,
+      temperature: 0.4,
+    }, secrets.shimAccessToken)
+
+    assert.equal(response.status, 200)
+    assert.equal(response.json.model, "xiaomi/MiMo-V2.5")
+    assert.equal(response.json.choices[0].message.content, "Hola mundo")
+    assert.equal(response.json.choices[0].finish_reason, "stop")
+    assert.equal(response.json.usage.prompt_tokens, 11)
+    assert.equal(response.json.usage.completion_tokens, 7)
+    assert.equal(response.json._meta.shim, "ocg")
+
+    const upstream = mock.takeAlphaRequests()
+    assert.equal(upstream.length, 1)
+    assert.equal(upstream[0].headers.authorization, "Bearer test-commandcode-key")
+    assert.equal(upstream[0].payload.params.model, "xiaomi/MiMo-V2.5")
+    assert.equal(upstream[0].payload.params.max_tokens, 123)
+    assert.equal(upstream[0].payload.params.temperature, 0.4)
+    assert.equal(upstream[0].payload.params.system, "Respondé en español.")
+    assert.deepStrictEqual(upstream[0].payload.params.messages, [
+      { role: "user", content: "Decí hola mundo" },
+    ])
+  })
+
+  it("returns upstream errors as OpenAI-style server errors", { timeout: 20000 }, async () => {
+    const mock = await startMockCommandCodeServer()
+    const ctx = createIsolatedCliContext(await getFreePort(), mock.port)
+    registerCleanup(ctx, mock)
+
+    await runCli(["start", "--background"], ctx.env)
+    const secrets = readJson(ctx.paths.secretsFile)
+    await waitForHealth(ctx.port, secrets.shimAccessToken)
+
+    mock.enqueueAlphaResponse({
+      status: 429,
+      body: JSON.stringify({ error: { message: "Rate limited" } }),
+      headers: { "Content-Type": "application/json" },
+    })
+
+    const response = await postJson(`http://127.0.0.1:${ctx.port}/v1/chat/completions`, {
+      model: "xiaomi/MiMo-V2.5",
+      messages: [{ role: "user", content: "hola" }],
+    }, secrets.shimAccessToken)
+
+    assert.equal(response.status, 500)
+    assert.match(response.json.error.message, /429/)
+    assert.equal(response.json.error.type, "server_error")
+  })
+
+  it("rejects models outside the catalog", { timeout: 20000 }, async () => {
+    const mock = await startMockCommandCodeServer()
+    const ctx = createIsolatedCliContext(await getFreePort(), mock.port)
+    registerCleanup(ctx, mock)
+
+    await runCli(["start", "--background"], ctx.env)
+    const secrets = readJson(ctx.paths.secretsFile)
+    await waitForHealth(ctx.port, secrets.shimAccessToken)
+
+    const response = await postJson(`http://127.0.0.1:${ctx.port}/v1/chat/completions`, {
+      model: "forbidden/model",
+      messages: [{ role: "user", content: "hola" }],
+    }, secrets.shimAccessToken)
+
+    assert.equal(response.status, 400)
+    assert.equal(response.json.error.type, "model_not_allowed")
+  })
+
+  it("translates tool calls in both directions", { timeout: 20000 }, async () => {
+    const mock = await startMockCommandCodeServer()
+    const ctx = createIsolatedCliContext(await getFreePort(), mock.port)
+    registerCleanup(ctx, mock)
+
+    await runCli(["start", "--background"], ctx.env)
+    const secrets = readJson(ctx.paths.secretsFile)
+    await waitForHealth(ctx.port, secrets.shimAccessToken)
+
+    mock.enqueueAlphaResponse({
+      status: 200,
+      body: sseText([
+        { type: "tool-call", toolCallId: "call_1", toolName: "echo", input: { text: "hola" } },
+        { type: "finish", finishReason: "tool_use", totalUsage: { inputTokens: 20, outputTokens: 5 } },
+      ]),
+    })
+
+    const response = await postJson(`http://127.0.0.1:${ctx.port}/v1/chat/completions`, {
+      model: "xiaomi/MiMo-V2.5",
+      messages: [{ role: "user", content: "Usá la tool echo" }],
+      tools: [
+        {
+          type: "function",
+          function: {
+            name: "echo",
+            description: "Echo text",
+            parameters: {
+              type: "object",
+              properties: { text: { type: "string" } },
+              required: ["text"],
+            },
+          },
+        },
+      ],
+    }, secrets.shimAccessToken)
+
+    assert.equal(response.status, 200)
+    assert.equal(response.json.choices[0].finish_reason, "tool_calls")
+    assert.equal(response.json.choices[0].message.tool_calls[0].id, "call_1")
+    assert.equal(response.json.choices[0].message.tool_calls[0].function.name, "echo")
+    assert.equal(response.json.choices[0].message.tool_calls[0].function.arguments, "{\"text\":\"hola\"}")
+    assert.equal(response.json.choices[0].message.content, null)
+
+    const upstream = mock.takeAlphaRequests()
+    assert.equal(upstream[0].payload.params.tools[0].name, "echo")
+    assert.deepStrictEqual(upstream[0].payload.params.tools[0].input_schema.required, ["text"])
+  })
+
+  it("converts image_url and data URL inputs for upstream multimodal payloads", { timeout: 20000 }, async () => {
+    const mock = await startMockCommandCodeServer()
+    const ctx = createIsolatedCliContext(await getFreePort(), mock.port)
+    registerCleanup(ctx, mock)
+
+    await runCli(["start", "--background"], ctx.env)
+    const secrets = readJson(ctx.paths.secretsFile)
+    await waitForHealth(ctx.port, secrets.shimAccessToken)
+
+    mock.enqueueAlphaResponse({
+      status: 200,
+      body: sseText([
+        { type: "text-delta", text: "imagen ok" },
+        { type: "finish", finishReason: "stop", totalUsage: { inputTokens: 10, outputTokens: 3 } },
+      ]),
+    })
+
+    const dataUrl = "data:image/png;base64,QUJDRA=="
+    const response = await postJson(`http://127.0.0.1:${ctx.port}/v1/chat/completions`, {
+      model: "xiaomi/MiMo-V2.5",
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "Describí ambas imágenes." },
+            { type: "image_url", image_url: { url: "https://example.com/cat.png" } },
+            { type: "input_image", image_url: dataUrl },
+          ],
+        },
+      ],
+    }, secrets.shimAccessToken)
+
+    assert.equal(response.status, 200)
+    assert.equal(response.json.choices[0].message.content, "imagen ok")
+
+    const upstream = mock.takeAlphaRequests()
+    const content = upstream[0].payload.params.messages[0].content
+    assert.equal(content[0].type, "text")
+    assert.deepStrictEqual(content[1], {
+      type: "image",
+      source: {
+        type: "url",
+        url: "https://example.com/cat.png",
+      },
+    })
+    assert.deepStrictEqual(content[2], {
+      type: "image",
+      source: {
+        type: "base64",
+        media_type: "image/png",
+        data: "QUJDRA==",
+      },
+    })
+  })
+
+  it("streams SSE chunks for text responses", { timeout: 20000 }, async () => {
+    const mock = await startMockCommandCodeServer()
+    const ctx = createIsolatedCliContext(await getFreePort(), mock.port)
+    registerCleanup(ctx, mock)
+
+    await runCli(["start", "--background"], ctx.env)
+    const secrets = readJson(ctx.paths.secretsFile)
+    await waitForHealth(ctx.port, secrets.shimAccessToken)
+
+    mock.enqueueAlphaResponse({
+      status: 200,
+      streamChunks: [
+        "data: {\"type\":\"text-delta\",\"text\":\"Hola\"}\n\n",
+        "data: {\"type\":\"text-delta\",\"text\":\" mundo\"}\n\n",
+        "data: {\"type\":\"finish\",\"finishReason\":\"stop\",\"totalUsage\":{\"inputTokens\":4,\"outputTokens\":2}}\n\n",
+        "data: [DONE]\n\n",
+      ],
+      chunkDelayMs: 20,
+    })
+
+    const streamed = await postJsonStream(`http://127.0.0.1:${ctx.port}/v1/chat/completions`, {
+      model: "xiaomi/MiMo-V2.5",
+      stream: true,
+      messages: [{ role: "user", content: "hola" }],
+    }, secrets.shimAccessToken)
+
+    assert.equal(streamed.status, 200)
+    assert.match(streamed.text, /"role":"assistant"/)
+    assert.match(streamed.text, /"content":"Hola"/)
+    assert.match(streamed.text, /"content":" mundo"/)
+    assert.match(streamed.text, /"finish_reason":"stop"/)
+    assert.match(streamed.text, /data: \[DONE\]/)
+  })
+
+  it("streams tool call chunks when upstream emits tool-call events", { timeout: 20000 }, async () => {
+    const mock = await startMockCommandCodeServer()
+    const ctx = createIsolatedCliContext(await getFreePort(), mock.port)
+    registerCleanup(ctx, mock)
+
+    await runCli(["start", "--background"], ctx.env)
+    const secrets = readJson(ctx.paths.secretsFile)
+    await waitForHealth(ctx.port, secrets.shimAccessToken)
+
+    mock.enqueueAlphaResponse({
+      status: 200,
+      streamChunks: [
+        "data: {\"type\":\"tool-call\",\"toolCallId\":\"call_stream\",\"toolName\":\"echo\",\"input\":{\"text\":\"hola\"}}\n\n",
+        "data: {\"type\":\"finish\",\"finishReason\":\"tool_use\",\"totalUsage\":{\"inputTokens\":9,\"outputTokens\":1}}\n\n",
+        "data: [DONE]\n\n",
+      ],
+    })
+
+    const streamed = await postJsonStream(`http://127.0.0.1:${ctx.port}/v1/chat/completions`, {
+      model: "xiaomi/MiMo-V2.5",
+      stream: true,
+      messages: [{ role: "user", content: "tool" }],
+    }, secrets.shimAccessToken)
+
+    assert.equal(streamed.status, 200)
+    assert.match(streamed.text, /"tool_calls"/)
+    assert.match(streamed.text, /"name":"echo"/)
+    assert.match(streamed.text, /"finish_reason":"tool_calls"/)
+  })
+})
+
 function createIsolatedCliContext(port, mockPort) {
   const root = mkdtempSync(join(tmpdir(), "ocg-integration-"))
   const userProfile = join(root, "user")
@@ -270,7 +530,13 @@ async function waitFor(predicate, options = {}) {
 }
 
 async function startMockCatalogServer() {
-  const server = createServer((req, res) => {
+  return await startMockCommandCodeServer()
+}
+
+async function startMockCommandCodeServer() {
+  const alphaRequests = []
+  const alphaResponses = []
+  const server = createServer(async (req, res) => {
     if (req.method === "GET" && req.url === "/provider/v1/models") {
       res.writeHead(200, { "Content-Type": "application/json" })
       res.end(JSON.stringify({
@@ -292,6 +558,37 @@ async function startMockCatalogServer() {
       return
     }
 
+    if (req.method === "POST" && req.url === "/alpha/generate") {
+      const body = await readRequestBody(req)
+      alphaRequests.push({
+        headers: req.headers,
+        payload: body ? JSON.parse(body) : null,
+      })
+      const next = alphaResponses.shift() || {
+        status: 200,
+        body: sseText([
+          { type: "text-delta", text: "OK" },
+          { type: "finish", finishReason: "stop", totalUsage: { inputTokens: 1, outputTokens: 1 } },
+        ]),
+      }
+
+      if (Array.isArray(next.streamChunks)) {
+        res.writeHead(next.status || 200, { "Content-Type": "text/event-stream; charset=utf-8", ...(next.headers || {}) })
+        for (const chunk of next.streamChunks) {
+          res.write(chunk)
+          if (next.chunkDelayMs) {
+            await new Promise(resolve => setTimeout(resolve, next.chunkDelayMs))
+          }
+        }
+        res.end()
+        return
+      }
+
+      res.writeHead(next.status || 200, { "Content-Type": "text/plain; charset=utf-8", ...(next.headers || {}) })
+      res.end(next.body || "")
+      return
+    }
+
     res.writeHead(404, { "Content-Type": "application/json" })
     res.end(JSON.stringify({ error: "not found" }))
   })
@@ -300,6 +597,12 @@ async function startMockCatalogServer() {
   const address = server.address()
   return {
     port: address.port,
+    enqueueAlphaResponse(next) {
+      alphaResponses.push(next)
+    },
+    takeAlphaRequests() {
+      return alphaRequests.splice(0, alphaRequests.length)
+    },
     close: () => new Promise(resolve => server.close(resolve)),
   }
 }
@@ -344,4 +647,53 @@ async function killChildProcess(child) {
 
 function readJson(file) {
   return JSON.parse(readFileSync(file, "utf8"))
+}
+
+async function postJson(url, payload, token) {
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-ocg-token": token,
+    },
+    body: JSON.stringify(payload),
+  })
+  const text = await response.text()
+  return {
+    status: response.status,
+    headers: response.headers,
+    text,
+    json: JSON.parse(text),
+  }
+}
+
+async function postJsonStream(url, payload, token) {
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-ocg-token": token,
+    },
+    body: JSON.stringify(payload),
+  })
+  return {
+    status: response.status,
+    headers: response.headers,
+    text: await response.text(),
+  }
+}
+
+function sseText(events) {
+  return events.map(event => `data: ${JSON.stringify(event)}\n`).join("\n")
+}
+
+function readRequestBody(req) {
+  return new Promise((resolve, reject) => {
+    let body = ""
+    req.on("data", chunk => {
+      body += String(chunk)
+    })
+    req.on("end", () => resolve(body))
+    req.on("error", reject)
+  })
 }
