@@ -138,6 +138,12 @@ describe("ocg CLI integration", () => {
     const restartedPid = Number(readFileSync(ctx.paths.pidFile, "utf8").trim())
     assert.notEqual(restartedPid, originalPid)
 
+    await waitFor(() => {
+      if (!existsSync(ctx.paths.watchdogLogFile)) return false
+      const content = readFileSync(ctx.paths.watchdogLogFile, "utf8")
+      return /WATCHDOG restart OK/i.test(content)
+    }, { timeoutMs: 5000, intervalMs: 150 })
+
     const watchdogLog = readFileSync(ctx.paths.watchdogLogFile, "utf8")
     assert.match(watchdogLog, /WATCHDOG restart OK/i)
   })
