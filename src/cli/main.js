@@ -256,6 +256,23 @@ async function doctorCommand() {
 
   // Local checks
   console.log(t("doctor.shim_health", health ? t("doctor.up") : t("doctor.down")))
+
+  // Watchdog status
+  const watchdogPid = readWatchdogPid()
+  if (watchdogPid && isProcessAlive(watchdogPid)) {
+    const paths = getPaths()
+    let restarts = 0
+    if (existsSync(paths.watchdogLogFile)) {
+      try {
+        const content = readFileSync(paths.watchdogLogFile, "utf8")
+        restarts = countWatchdogRestarts(content)
+      } catch { /* ignore */ }
+    }
+    const suffix = restarts > 0 ? t("doctor.watchdog_restarts", String(restarts)) : ""
+    console.log(t("doctor.watchdog", `${t("doctor.watchdog_active")}${suffix ? " " + suffix : ""}`))
+  } else {
+    console.log(t("doctor.watchdog", t("doctor.watchdog_inactive")))
+  }
   console.log(t("doctor.opencode_config", detected.configFound ? t("status.yes") : t("status.no")))
   console.log(t("doctor.provider", provider ? t("status.yes") : t("status.no")))
   console.log(t("doctor.desktop", detected.desktop ? t("status.yes") : t("status.no")))
@@ -347,7 +364,7 @@ async function refreshModelsCommand(args = []) {
   console.log(t("refresh.complete", useful.length))
 }
 
-function parseRefreshModelsArgs(args) {
+export function parseRefreshModelsArgs(args) {
   const values = Array.isArray(args) ? args : []
   let full = false
   let concurrency = undefined
@@ -468,7 +485,7 @@ async function logsCommand(args = []) {
   }
 }
 
-function readTail(filePath, count) {
+export function readTail(filePath, count) {
   const content = readFileSync(filePath, "utf8")
   const allLines = content.split(/\r?\n/)
   return allLines.slice(-count)
@@ -743,7 +760,7 @@ async function killWatchdog() {
   clearWatchdogPid()
 }
 
-function formatCatalogAge(updatedAt) {
+export function formatCatalogAge(updatedAt) {
   if (!updatedAt) return t("misc.unknown")
   const ageMs = Date.now() - new Date(updatedAt).getTime()
   if (ageMs < 0) return t("misc.unknown")
@@ -765,4 +782,8 @@ function getShimHeaders(token) {
   return {
     "x-ocg-token": token,
   }
+}
+
+export function countWatchdogRestarts(content) {
+  return (String(content || "").match(/restart OK/g) || []).length
 }

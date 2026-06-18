@@ -13,10 +13,11 @@ export function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms))
 }
 
-export function findPidByPort(port, { execFileSync: _exec } = {}) {
+export function findPidByPort(port, { execFileSync: _exec, platform: _platform } = {}) {
   const exec = _exec || execFileSync
+  const platform = _platform || process.platform
   try {
-    if (process.platform === "win32") {
+    if (platform === "win32") {
       // Try PowerShell Get-NetTCPConnection first (cleaner output)
       try {
         const result = exec(

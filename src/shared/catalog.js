@@ -38,6 +38,7 @@ export function fallbackCatalog() {
     id,
     name,
     context_length: resolveContextWindow(id),
+    tags: [],
     catalog_capabilities: {
       vision: {
         supported: null,
@@ -52,6 +53,10 @@ export function fallbackCatalog() {
         source: null,
       },
       video: {
+        supported: null,
+        source: null,
+      },
+      reasoning: {
         supported: null,
         source: null,
       },
@@ -70,6 +75,7 @@ export function normalizeCatalogRows(rawModels) {
     result.push({
       id,
       name: firstString(raw.display_name, raw.displayName, raw.label, raw.name) || id,
+      tags: normalizeStringArray(firstArray(raw.tags) || []),
       context_length: resolveContextWindow(id, firstNumber(
         raw.context_length,
         raw.contextLength,
@@ -95,6 +101,7 @@ export function deriveCatalogFromCompatibility(compatibilityMatrix) {
         pdf: normalizeStoredPdfCapability(info),
         audio: normalizeStoredGenericCapability(info, "audio"),
         video: normalizeStoredGenericCapability(info, "video"),
+        reasoning: normalizeStoredGenericCapability(info, "reasoning"),
       },
     }))
   return entries.length > 0 ? entries : fallbackCatalog()
@@ -105,7 +112,8 @@ function inferCatalogCapabilities(raw, modelId = "") {
   const pdf = inferCatalogPdfCapability(raw)
   const audio = inferCatalogMediaCapability(raw, "audio")
   const video = inferCatalogMediaCapability(raw, "video")
-  return applyKnownCapabilityHints(modelId, { vision, pdf, audio, video })
+  const reasoning = inferCatalogReasoningCapability(raw)
+  return applyKnownCapabilityHints(modelId, { vision, pdf, audio, video, reasoning })
 }
 
 function inferCatalogVisionCapability(raw) {
@@ -269,6 +277,46 @@ function inferCatalogMediaCapability(raw, kind) {
   }
 }
 
+function inferCatalogReasoningCapability(raw) {
+  const directReasoning = firstBoolean(
+    raw.supports_reasoning,
+    raw.supportsReasoning,
+    raw.reasoning,
+    raw.thinking,
+  )
+  if (directReasoning !== null) {
+    return {
+      supported: directReasoning,
+      source: "catalog.supports_reasoning",
+    }
+  }
+
+  const capabilities = isRecord(raw.capabilities) ? raw.capabilities : null
+  const fromCapabilities = firstBoolean(
+    capabilities?.reasoning,
+    capabilities?.thinking,
+  )
+  if (fromCapabilities !== null) {
+    return {
+      supported: fromCapabilities,
+      source: "catalog.capabilities.reasoning",
+    }
+  }
+
+  const tags = normalizeStringArray(raw.tags)
+  if (tags.includes("reasoning") || tags.includes("thinking")) {
+    return {
+      supported: true,
+      source: "catalog.tags",
+    }
+  }
+
+  return {
+    supported: null,
+    source: null,
+  }
+}
+
 function applyKnownCapabilityHints(modelId, capabilities) {
   const normalized = comparableCommandCodeModel(modelId)
   const next = {
@@ -276,6 +324,7 @@ function applyKnownCapabilityHints(modelId, capabilities) {
     pdf: { ...(capabilities?.pdf || { supported: null, source: null }) },
     audio: { ...(capabilities?.audio || { supported: null, source: null }) },
     video: { ...(capabilities?.video || { supported: null, source: null }) },
+    reasoning: { ...(capabilities?.reasoning || { supported: null, source: null }) },
   }
 
   if (normalized === "moonshotai/kimi-k2-5" || normalized === "moonshotai/kimi-k2-6") {
@@ -313,6 +362,24 @@ function applyKnownCapabilityHints(modelId, capabilities) {
       next.pdf = {
         supported: true,
         source: "hint.mimo.pdf",
+      }
+    }
+  }
+
+  if (
+    normalized === "moonshotai/kimi-k2-5"
+    || normalized === "moonshotai/kimi-k2-6"
+    || normalized === "xiaomi/mimo-v2-5"
+    || normalized === "xiaomi/mimo-v2-5-pro"
+    || normalized === "deepseek/deepseek-v4-pro"
+    || normalized === "deepseek/deepseek-v4-flash"
+    || normalized === "zai-org/glm-5"
+    || normalized === "zai-org/glm-5-1"
+  ) {
+    if (next.reasoning.supported === null) {
+      next.reasoning = {
+        supported: true,
+        source: "hint.reasoning.known_model",
       }
     }
   }

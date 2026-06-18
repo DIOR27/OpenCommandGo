@@ -13,6 +13,7 @@ CLI shim to use Command Code Go subscription models from OpenCode through a loca
 - Maintains a dynamic catalog of available models
 - Protects the shim with an internal local token
 - Includes setup, diagnostics, catalog refresh, and runtime control commands
+- Includes watchdog auto-recovery, log inspection, and reset helpers
 
 ## Installation
 
@@ -35,6 +36,9 @@ ocg start
 ocg start --background
 ocg serve
 ocg stop
+ocg logs
+ocg logs --watchdog
+ocg logs --follow
 ocg autostart enable
 ocg autostart disable
 ocg autostart status
@@ -121,6 +125,7 @@ Available modes:
 - `ocg refresh-models --probe` — validates real availability (may consume credits)
 - `ocg refresh-models --full` — probes text, image, reasoning, and tools
 - `ocg refresh-models --parallel 6` — override the worker count
+- `ocg refresh-models --probe` and `--full` WILL spend Command Code Go credits/tokens
 
 OpenCode badges are driven by generated model metadata:
 
@@ -140,6 +145,20 @@ Recommended:
 - No open CORS
 - Upstream timeout enforcement
 - Stricter body size limits
+
+## Runtime Operations
+
+- `ocg start --background` refreshes the catalog, starts the shim, and launches a watchdog daemon.
+- `ocg stop` first tries the internal `/shutdown` endpoint, then falls back to PID/port-based shutdown.
+- `ocg logs` reads the main shim log.
+- `ocg logs --watchdog` reads the watchdog log.
+- `ocg reset` deletes only local config/secrets so the installation can be reconfigured cleanly.
+
+## QA and Release
+
+- CI: `C:\Users\diego\OneDrive\Documentos\commandcode-go-around\.github\workflows\ci.yml`
+- Tagged npm publish: `C:\Users\diego\OneDrive\Documentos\commandcode-go-around\.github\workflows\publish.yml`
+- Develop → main auto-release gate: `C:\Users\diego\OneDrive\Documentos\commandcode-go-around\.github\workflows\auto-release.yml`
 
 ## Current Limitations
 

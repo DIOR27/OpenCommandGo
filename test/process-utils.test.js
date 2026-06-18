@@ -54,7 +54,7 @@ describe("findPidByPort - Windows", () => {
       if (cmd === "powershell") return "12345\n"
       return ""
     }
-    const pid = findPidByPort(4310, { execFileSync: mockExec })
+    const pid = findPidByPort(4310, { execFileSync: mockExec, platform: "win32" })
     assert.strictEqual(pid, 12345)
   })
 
@@ -69,7 +69,7 @@ describe("findPidByPort - Windows", () => {
       }
       return ""
     }
-    const pid = findPidByPort(4310, { execFileSync: mockExec })
+    const pid = findPidByPort(4310, { execFileSync: mockExec, platform: "win32" })
     assert.strictEqual(pid, 67890)
   })
 
@@ -79,13 +79,13 @@ describe("findPidByPort - Windows", () => {
       if (cmd === "netstat") return ""
       return ""
     }
-    const pid = findPidByPort(4310, { execFileSync: mockExec })
+    const pid = findPidByPort(4310, { execFileSync: mockExec, platform: "win32" })
     assert.strictEqual(pid, null)
   })
 
   it("returns null when execFileSync throws entirely", () => {
     const mockExec = () => { throw new Error("EPERM") }
-    const pid = findPidByPort(4310, { execFileSync: mockExec })
+    const pid = findPidByPort(4310, { execFileSync: mockExec, platform: "win32" })
     assert.strictEqual(pid, null)
   })
 
@@ -94,7 +94,7 @@ describe("findPidByPort - Windows", () => {
       if (cmd === "powershell") return "\n\nnot-a-number\n"
       return ""
     }
-    const pid = findPidByPort(4310, { execFileSync: mockExec })
+    const pid = findPidByPort(4310, { execFileSync: mockExec, platform: "win32" })
     assert.strictEqual(pid, null)
   })
 
@@ -111,7 +111,80 @@ describe("findPidByPort - Windows", () => {
       }
       return ""
     }
-    const pid = findPidByPort(4310, { execFileSync: mockExec })
+    const pid = findPidByPort(4310, { execFileSync: mockExec, platform: "win32" })
+    assert.strictEqual(pid, 77777)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// findPidByPort (Unix code path: lsof + ss)
+// ---------------------------------------------------------------------------
+describe("findPidByPort - Unix", () => {
+  it("returns PID from lsof -ti output", () => {
+    const mockExec = (cmd) => {
+      if (cmd === "lsof") return "12345\n"
+      return ""
+    }
+    const pid = findPidByPort(4310, { execFileSync: mockExec, platform: "linux" })
+    assert.strictEqual(pid, 12345)
+  })
+
+  it("falls back to ss when lsof fails", () => {
+    const mockExec = (cmd) => {
+      if (cmd === "lsof") throw new Error("lsof not found")
+      if (cmd === "ss") {
+        return [
+          "LISTEN 0     128    127.0.0.1:4310  0.0.0.0:*    users:((\"node\",pid=67890,fd=21))",
+          "LISTEN 0     128    127.0.0.1:5432  0.0.0.0:*    users:((\"postgres\",pid=11111,fd=7))",
+        ].join("\n")
+      }
+      return ""
+    }
+    const pid = findPidByPort(4310, { execFileSync: mockExec, platform: "linux" })
+    assert.strictEqual(pid, 67890)
+  })
+
+  it("returns null when no process is listening on the port (Unix)", () => {
+    const mockExec = (cmd) => {
+      if (cmd === "lsof") throw new Error("not found")
+      if (cmd === "ss") return ""
+      return ""
+    }
+    const pid = findPidByPort(4310, { execFileSync: mockExec, platform: "linux" })
+    assert.strictEqual(pid, null)
+  })
+
+  it("returns null when both lsof and ss fail", () => {
+    const mockExec = (cmd) => {
+      if (cmd === "lsof") throw new Error("EPERM")
+      if (cmd === "ss") throw new Error("EPERM")
+      return ""
+    }
+    const pid = findPidByPort(4310, { execFileSync: mockExec, platform: "linux" })
+    assert.strictEqual(pid, null)
+  })
+
+  it("discards non-numeric lsof output", () => {
+    const mockExec = (cmd) => {
+      if (cmd === "lsof") return "not-a-pid\n"
+      return ""
+    }
+    const pid = findPidByPort(4310, { execFileSync: mockExec, platform: "linux" })
+    assert.strictEqual(pid, null)
+  })
+
+  it("matches correct PID from ss port-filtered output", () => {
+    const mockExec = (cmd) => {
+      if (cmd === "lsof") throw new Error("not found")
+      if (cmd === "ss") {
+        // ss is called with 'sport = :4310', so it only returns lines for that port
+        return [
+          "LISTEN 0     128    127.0.0.1:4310 0.0.0.0:*    users:((\"node\",pid=77777,fd=17))",
+        ].join("\n")
+      }
+      return ""
+    }
+    const pid = findPidByPort(4310, { execFileSync: mockExec, platform: "linux" })
     assert.strictEqual(pid, 77777)
   })
 })

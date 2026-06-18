@@ -70,7 +70,7 @@ function buildModelConfig(compatibilityMatrix) {
     if (compat?.status === "broken") continue
     const supportedInputs = resolveSupportedInputs(compat)
     const contextWindow = resolveContextWindow(id, context_length)
-    const supportsReasoning = supportsCommandCodeReasoning(id, compat?.tags)
+    const supportsReasoning = resolveReasoningSupport(id, compat)
     const interleavedField = commandCodeReasoningInterleavedField(id)
     models[id] = {
       name,
@@ -112,6 +112,12 @@ function buildModelConfig(compatibilityMatrix) {
     }
   }
   return models
+}
+
+function resolveReasoningSupport(modelId, compat) {
+  const capabilityReasoning = compat?.capabilities?.reasoning?.supported
+  if (typeof capabilityReasoning === "boolean") return capabilityReasoning
+  return supportsCommandCodeReasoning(modelId, compat?.tags)
 }
 
 function resolveSupportedInputs(compat) {

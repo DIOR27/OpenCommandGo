@@ -5,8 +5,10 @@ import { writePid } from "../config/store.js"
 import { rotateLogIfNeeded } from "../shared/log-rotation.js"
 import { isProcessAlive, sleep } from "../shared/process-utils.js"
 
-const CHECK_INTERVAL = 10000
-const MAX_FAILURES = 3
+const CHECK_INTERVAL = readPositiveIntEnv("OCG_WATCHDOG_INTERVAL_MS", 10000)
+const MAX_FAILURES = readPositiveIntEnv("OCG_WATCHDOG_MAX_FAILURES", 3)
+const RESTART_DELAY_MS = readPositiveIntEnv("OCG_WATCHDOG_RESTART_DELAY_MS", 2000)
+const READY_TIMEOUT_MS = readPositiveIntEnv("OCG_WATCHDOG_READY_TIMEOUT_MS", 6000)
 
 /**
  * Watchdog daemon entry point.
@@ -72,7 +74,7 @@ async function runWatchdog() {
     }
 
     // Wait for the port to be free
-    await sleep(2000)
+    await sleep(RESTART_DELAY_MS)
 
     // Spawn new shim
     const child = spawn(executablePath, [entryPath, "serve"], {
@@ -109,7 +111,7 @@ async function checkHealth(host, port, token) {
 }
 
 async function waitForShimReady({ pid, host, port, token }) {
-  const deadline = Date.now() + 6000
+  const deadline = Date.now() + READY_TIMEOUT_MS
   while (Date.now() < deadline) {
     const alive = isProcessAlive(pid)
     if (!alive) return false
@@ -131,6 +133,11 @@ function logWatchdog(line) {
   ensureDir(paths.logDir)
   rotateLogIfNeeded(paths.watchdogLogFile)
   appendFileSync(paths.watchdogLogFile, `[${new Date().toISOString()}] ${line}\n`)
+}
+
+function readPositiveIntEnv(name, fallback) {
+  const raw = Number(process.env[name])
+  return Number.isInteger(raw) && raw > 0 ? raw : fallback
 }
 
 // Only auto-run when executed as entry point (not when imported by tests)

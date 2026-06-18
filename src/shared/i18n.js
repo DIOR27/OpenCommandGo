@@ -79,6 +79,10 @@ const messages = {
     "doctor.catalog_age": "Catalog updated: {0}",
     "doctor.autostart": "Autostart configured: {0}",
     "doctor.autostart_provider": "Autostart provider: {0}",
+    "doctor.watchdog": "Watchdog: {0}",
+    "doctor.watchdog_active": "active",
+    "doctor.watchdog_inactive": "inactive",
+    "doctor.watchdog_restarts": "({0} restarts)",
     "doctor.models": "Useful models in catalog: {0}",
 
     // -- Refresh --
@@ -190,8 +194,8 @@ Commands:
     "start.already_running_port": "OpenCommandGo ya está corriendo en http://{0}:{1}.",
     "start.launched": "OpenCommandGo lanzado en background con PID {0}.",
     "start.watchdog_active": "Watchdog de auto-recuperación activo.",
-    "start.port_conflict": "El puerto {0} ya está ocupado por otro proceso o por un shim viejo con token distinto. Primero detenelo y volvé a intentar.",
-    "start.failed": "OpenCommandGo no pudo iniciar en background. Revisá si el puerto está libre y volvé a intentar.",
+    "start.port_conflict": "El puerto {0} ya está ocupado por otro proceso o por un shim viejo con token distinto. Primero deténgalo y vuelva a intentar.",
+    "start.failed": "OpenCommandGo no pudo iniciar en background. Revise si el puerto está libre y vuelva a intentar.",
 
     // -- Server --
     "server.listening": "OCG escuchando en http://{0}:{1}",
@@ -220,8 +224,8 @@ Commands:
     "status.no": "no",
     "status.desktop_detected": "Desktop detectado: {0}",
     "status.cli_detected": "CLI detectado: {0}",
-    "status.autostart_enabled": "Autostart habilitado: {0}",
-    "status.autostart_provider": "Autostart proveedor: {0}",
+    "status.autostart_enabled": "Inicio automático habilitado: {0}",
+    "status.autostart_provider": "Proveedor de inicio automático: {0}",
     "status.models_count": "Modelos disponibles en catálogo: {0}",
 
     // -- Doctor --
@@ -244,8 +248,12 @@ Commands:
     "doctor.cli": "CLI detectado: {0}",
     "doctor.compat_matrix": "Compat matrix: {0}",
     "doctor.catalog_age": "Catálogo actualizado: {0}",
-    "doctor.autostart": "Autostart configurado: {0}",
-    "doctor.autostart_provider": "Autostart proveedor: {0}",
+    "doctor.autostart": "Inicio automático configurado: {0}",
+    "doctor.autostart_provider": "Proveedor de inicio automático: {0}",
+    "doctor.watchdog": "Watchdog: {0}",
+    "doctor.watchdog_active": "activo",
+    "doctor.watchdog_inactive": "inactivo",
+    "doctor.watchdog_restarts": "({0} reinicios)",
     "doctor.models": "Modelos disponibles en catálogo: {0}",
 
     // -- Refresh --
