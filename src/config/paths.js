@@ -50,10 +50,8 @@ export function getPaths() {
 }
 
 export function getOpenCodeConfigPath() {
-  if (process.platform === "win32") {
-    return join(process.env.USERPROFILE || homedir(), ".config", "opencode", "opencode.json")
-  }
-  return join(homedir(), ".config", "opencode", "opencode.json")
+  const home = process.env.USERPROFILE || homedir()
+  return join(home, ".config", "opencode", "opencode.json")
 }
 
 export function ensureParentDir(file) {

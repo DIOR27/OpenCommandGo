@@ -119,7 +119,7 @@ async function runSetup() {
           {
             id: nextConfig.providerId,
             kind: "commandcode",
-            routePrefix: "cmdshim",
+            routePrefix: "ocg",
             name: "OCG CommandCode",
             compatibilityMatrix: readCompatibilityMatrix("commandcode"),
           },

@@ -41,13 +41,13 @@ describe("ocg CLI integration", () => {
 
     const health = await waitForHealth(ctx.port, secrets.shimAccessToken)
     assert.equal(health?.ok, true)
-    assert.equal(health?.provider, "ocg")
+    assert.equal(health?.provider, "opencg-cli")
 
     const opencodeConfig = readJson(ctx.paths.opencodeConfigFile)
-    const provider = opencodeConfig?.provider?.cmdshim
+    const provider = opencodeConfig?.provider?.ocg
     assert.ok(provider, "expected provider to be synced into OpenCode config")
     assert.equal(provider.name, "OCG CommandCode")
-    assert.equal(provider.options?.baseURL, `http://127.0.0.1:${ctx.port}/cmdshim/v1`)
+    assert.equal(provider.options?.baseURL, `http://127.0.0.1:${ctx.port}/ocg/v1`)
     assert.equal(provider.options?.headers?.["x-ocg-token"], secrets.shimAccessToken)
     assert.deepStrictEqual(provider.models["xiaomi/MiMo-V2.5"]?.modalities?.input, ["text", "image", "pdf", "audio", "video"])
     assert.equal(provider.models["xiaomi/MiMo-V2.5"]?.capabilities?.audio?.supported, true)
@@ -219,7 +219,7 @@ describe("ocg chat/completions integration", () => {
     assert.equal(response.json.choices[0].finish_reason, "stop")
     assert.equal(response.json.usage.prompt_tokens, 11)
     assert.equal(response.json.usage.completion_tokens, 7)
-    assert.equal(response.json._meta.shim, "ocg")
+    assert.equal(response.json._meta.shim, "opencg-cli")
 
     const upstream = mock.takeAlphaRequests()
     assert.equal(upstream.length, 1)

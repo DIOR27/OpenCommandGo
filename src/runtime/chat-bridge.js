@@ -91,7 +91,7 @@ export function buildOpenAICompletion(model, upstream) {
     ],
     usage,
     _meta: {
-      shim: "ocg",
+      shim: "opencg-cli",
       duration_ms: upstream.durationMs,
       session_id: upstream.sessionId,
     },

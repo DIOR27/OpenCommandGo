@@ -79,7 +79,7 @@ export async function startServer() {
         const availableCatalog = commandCodeCatalogController.getAvailableCatalog()
         return json(res, 200, {
           ok: true,
-          provider: "ocg",
+          provider: "opencg-cli",
           host: settings.host,
           port: settings.port,
           models: availableCatalog.map(({ id, name }) => ({ id, name })),
@@ -122,7 +122,7 @@ export async function startServer() {
         })
       }
 
-      if (req.method === "GET" && (url.pathname === "/v1/models" || url.pathname === "/cmdshim/v1/models")) {
+      if (req.method === "GET" && (url.pathname === "/v1/models" || url.pathname === "/ocg/v1/models")) {
         if (!requireShimAuth(req, res, settings)) return
         return json(res, 200, {
           object: "list",
@@ -138,7 +138,7 @@ export async function startServer() {
         })
       }
 
-      if (req.method === "POST" && (url.pathname === "/v1/chat/completions" || url.pathname === "/cmdshim/v1/chat/completions")) {
+      if (req.method === "POST" && (url.pathname === "/v1/chat/completions" || url.pathname === "/ocg/v1/chat/completions")) {
         if (!requireShimAuth(req, res, settings)) return
         if (!settings.commandCodeApiKey) {
           return json(res, 500, openAIError("missing_api_key", t("error.missing_api_key")))

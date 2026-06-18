@@ -5,7 +5,7 @@ import { getPaths, ensureDir, ensureParentDir } from "./paths.js"
 const DEFAULT_CONFIG = {
   host: "127.0.0.1",
   port: 4310,
-  providerId: "cmdshim",
+  providerId: "ocg",
   openRouterProviderId: "openrouter-free",
   commandCodeBaseUrl: "https://api.commandcode.ai",
   commandCodeVersion: "0.32.2",

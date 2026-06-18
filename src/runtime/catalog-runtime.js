@@ -25,7 +25,7 @@ export function createCatalogController({ initialCompatibilityMatrix, writeCompa
           {
             id: settings.providerId,
             kind: "commandcode",
-            routePrefix: "cmdshim",
+            routePrefix: "ocg",
             name: "OCG CommandCode",
             compatibilityMatrix,
           },
@@ -108,7 +108,7 @@ export function createCatalogController({ initialCompatibilityMatrix, writeCompa
             {
               id: settings.providerId,
               kind: "commandcode",
-              routePrefix: "cmdshim",
+              routePrefix: "ocg",
               name: "OCG CommandCode",
               compatibilityMatrix,
             },
@@ -193,7 +193,7 @@ export function createCatalogController({ initialCompatibilityMatrix, writeCompa
           {
             id: settings.providerId,
             kind: "commandcode",
-            routePrefix: "cmdshim",
+            routePrefix: "ocg",
             name: "OCG CommandCode",
             compatibilityMatrix,
           },
