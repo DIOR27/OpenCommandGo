@@ -386,6 +386,7 @@ async function refreshModelsCommand(args = []) {
   const options = parseRefreshModelsArgs(args)
   console.log(t("refresh.start"))
   const shouldProbe = await resolveRefreshProbeConsent(options)
+  const shouldPrintPerModelProgress = shouldProbe || options.provider !== "all" || options.showModels
   const matrix = await refreshModelCatalogNow({
     provider: options.provider,
     probeMode: shouldProbe ? (options.full ? "full" : "fast") : "catalog",
@@ -393,14 +394,16 @@ async function refreshModelsCommand(args = []) {
     concurrency: options.concurrency,
     onProgress(event) {
       if (event.type === "catalog") {
-        console.log(t("refresh.catalog", event.message))
+        console.log(`${resolveRefreshProviderLabel(event.provider)}: ${event.message}`)
         return
       }
       if (event.type === "model-start") {
+        if (!shouldPrintPerModelProgress) return
         console.log(t("refresh.model_start", event.index, event.total, event.model))
         return
       }
       if (event.type === "model-done") {
+        if (!shouldPrintPerModelProgress) return
         console.log(t("refresh.model_done", event.status))
       }
     },
@@ -411,8 +414,18 @@ async function refreshModelsCommand(args = []) {
   const openRouterUseful = Object.entries(matrix.openrouter?.models || {})
     .filter(([, info]) => info?.status !== "broken")
     .map(([id]) => id)
-  console.log(t("refresh.complete", commandCodeUseful.length))
-  console.log(`OpenRouter gratis detectados: ${openRouterUseful.length}`)
+  console.log(`CommandCode: ${commandCodeUseful.length} modelos disponibles`)
+  console.log(`OpenRouter Free: ${openRouterUseful.length} modelos disponibles`)
+
+  const shouldShowModels = options.showModels || options.provider !== "all"
+  if (shouldShowModels) {
+    if (options.provider === "all" || options.provider === "commandcode") {
+      printModelList("CommandCode", commandCodeUseful)
+    }
+    if (options.provider === "all" || options.provider === "openrouter") {
+      printModelList("OpenRouter Free", openRouterUseful)
+    }
+  }
 }
 
 export function parseRefreshModelsArgs(args) {
@@ -422,6 +435,7 @@ export function parseRefreshModelsArgs(args) {
   let yes = false
   let probe = false
   let provider = "all"
+  let showModels = false
 
   for (let index = 0; index < values.length; index += 1) {
     const value = String(values[index] || "").trim()
@@ -440,6 +454,11 @@ export function parseRefreshModelsArgs(args) {
 
     if (value === "--probe" || value === "--verify") {
       probe = true
+      continue
+    }
+
+    if (value === "--show-models") {
+      showModels = true
       continue
     }
 
@@ -477,7 +496,18 @@ export function parseRefreshModelsArgs(args) {
     }
   }
 
-  return { full, concurrency, yes, probe, provider }
+  return { full, concurrency, yes, probe, provider, showModels }
+}
+
+function printModelList(label, modelIds) {
+  console.log(`${label}:`)
+  for (const modelId of modelIds) {
+    console.log(`- ${modelId}`)
+  }
+}
+
+function resolveRefreshProviderLabel(provider) {
+  return provider === "openrouter" ? "Catálogo OpenRouter" : "Catálogo CommandCode"
 }
 
 async function resolveRefreshProbeConsent(options) {

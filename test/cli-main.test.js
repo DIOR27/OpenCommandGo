@@ -14,6 +14,7 @@ describe("parseRefreshModelsArgs", () => {
       yes: true,
       probe: true,
       provider: "all",
+      showModels: false,
     })
   })
 
@@ -25,6 +26,7 @@ describe("parseRefreshModelsArgs", () => {
       yes: false,
       probe: true,
       provider: "all",
+      showModels: false,
     })
   })
 
@@ -36,6 +38,7 @@ describe("parseRefreshModelsArgs", () => {
       yes: false,
       probe: true,
       provider: "all",
+      showModels: false,
     })
   })
 
@@ -47,6 +50,19 @@ describe("parseRefreshModelsArgs", () => {
       yes: false,
       probe: true,
       provider: "openrouter",
+      showModels: false,
+    })
+  })
+
+  it("parses show-models flag", () => {
+    const parsed = parseRefreshModelsArgs(["--show-models"])
+    assert.deepStrictEqual(parsed, {
+      full: false,
+      concurrency: undefined,
+      yes: false,
+      probe: false,
+      provider: "all",
+      showModels: true,
     })
   })
 })

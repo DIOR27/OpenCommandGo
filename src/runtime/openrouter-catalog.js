@@ -63,9 +63,9 @@ export function createOpenRouterCatalogController({ initialCompatibilityMatrix, 
     compatibilityRefreshRunning = true
     log(`OPENROUTER refresh_start reason=${reason}`)
     try {
-      options.onProgress?.({ type: "catalog", message: "consultando modelos gratis..." })
+      options.onProgress?.({ provider: "openrouter", type: "catalog", message: "consultando modelos gratis..." })
       const catalog = await fetchAvailableCatalog(settings)
-      options.onProgress?.({ type: "catalog", message: `${catalog.length} modelos gratis detectados` })
+      options.onProgress?.({ provider: "openrouter", type: "catalog", message: `${catalog.length} modelos gratis detectados` })
       const next = {
         updated_at: new Date().toISOString(),
         refresh_interval_hours: settings.compatibilityRefreshHours,
@@ -76,6 +76,7 @@ export function createOpenRouterCatalogController({ initialCompatibilityMatrix, 
       for (let index = 0; index < catalog.length; index += 1) {
         const row = catalog[index]
         options.onProgress?.({
+          provider: "openrouter",
           type: "model-start",
           index: index + 1,
           total: catalog.length,
@@ -87,6 +88,7 @@ export function createOpenRouterCatalogController({ initialCompatibilityMatrix, 
           : buildCatalogOnlyCompatibilityEntry(row)
         next.models[row.id] = entry
         options.onProgress?.({
+          provider: "openrouter",
           type: "model-done",
           index: index + 1,
           total: catalog.length,

@@ -156,6 +156,32 @@ describe("ocg CLI integration", () => {
     const watchdogLog = readFileSync(ctx.paths.watchdogLogFile, "utf8")
     assert.match(watchdogLog, /WATCHDOG restart OK/i)
   })
+
+  it("keeps refresh-models output compact by default and lists models when requested", { timeout: 20000 }, async () => {
+    const commandCodeMock = await startMockCommandCodeServer()
+    const openRouterMock = await startMockOpenRouterServer()
+    const ctx = createIsolatedCliContext(await getFreePort(), commandCodeMock.port, {
+      openRouterPort: openRouterMock.port,
+      openRouterApiKey: "test-openrouter-key",
+    })
+    registerCleanup(ctx, commandCodeMock, openRouterMock)
+
+    const compact = await runCli(["refresh-models"], ctx.env)
+    assert.equal(compact.code, 0, compact.stderr)
+    assert.doesNotMatch(compact.stdout, /meta-llama\/llama-4-scout:free/i)
+    assert.doesNotMatch(compact.stdout, /xiaomi\/MiMo-V2.5/i)
+
+    const showAll = await runCli(["refresh-models", "--show-models"], ctx.env)
+    assert.equal(showAll.code, 0, showAll.stderr)
+    assert.match(showAll.stdout, /CommandCode:/)
+    assert.match(showAll.stdout, /OpenRouter Free:/)
+    assert.match(showAll.stdout, /meta-llama\/llama-4-scout:free/i)
+
+    const openRouterOnly = await runCli(["refresh-models", "--provider", "openrouter"], ctx.env)
+    assert.equal(openRouterOnly.code, 0, openRouterOnly.stderr)
+    assert.match(openRouterOnly.stdout, /OpenRouter Free:/)
+    assert.match(openRouterOnly.stdout, /meta-llama\/llama-4-scout:free/i)
+  })
 })
 
 describe("ocg chat/completions integration", () => {
