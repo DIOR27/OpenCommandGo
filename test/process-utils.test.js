@@ -230,9 +230,11 @@ describe("gracefulKill", () => {
   it("Phase 0: falls through to Phase 1+2 when /shutdown fails", async () => {
     mock.method(global, "fetch", () => Promise.reject(new Error("ECONNREFUSED")))
 
-    mock.method(process, "kill", () => {})
-
     let forceKillCalled = false
+    mock.method(process, "kill", (_pid, signal) => {
+      if (signal === "SIGKILL") forceKillCalled = true
+    })
+
     const mockExec = (cmd, args) => {
       if (cmd === "taskkill" && args && args[0] === "/F") {
         forceKillCalled = true
@@ -315,12 +317,21 @@ describe("gracefulKill", () => {
 
   it("Phase 2: force kills with taskkill /F when graceful timeout expires", async () => {
     let alive = true
-    mock.method(process, "kill", () => {
-      if (!alive) throw new Error("ESRCH")
-    })
-
     let forceKillCalled = false
     let forceTimeoutCalled = false
+
+    mock.method(process, "kill", (_pid, signal) => {
+      if (signal === 0) {
+        if (!alive) throw new Error("ESRCH")
+        return
+      }
+      if (signal === "SIGKILL") {
+        forceKillCalled = true
+        alive = false
+        return
+      }
+      if (!alive) throw new Error("ESRCH")
+    })
 
     const mockExec = (cmd, args) => {
       if (cmd === "taskkill" && args && args[0] === "/F") {
