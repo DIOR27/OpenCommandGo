@@ -19,10 +19,17 @@ export function createCatalogController({ initialCompatibilityMatrix, writeCompa
     buildModelList: () => availableCatalog.map(model => buildModelDescriptor(model, compatibilityMatrix?.models?.[model.id])),
     syncProviderConfig(settings) {
       syncOpenCodeConfig({
-        providerId: settings.providerId,
         host: settings.host,
         port: settings.port,
-        compatibilityMatrix,
+        providers: [
+          {
+            id: settings.providerId,
+            kind: "commandcode",
+            routePrefix: "cmdshim",
+            name: "OCG CommandCode",
+            compatibilityMatrix,
+          },
+        ],
       })
     },
     async refreshNow(settings, options = {}) {
@@ -54,11 +61,13 @@ export function createCatalogController({ initialCompatibilityMatrix, writeCompa
     log(`COMPAT refresh_start reason=${reason}`)
     try {
       options.onProgress?.({
+        provider: "commandcode",
         type: "catalog",
         message: "consultando modelos...",
       })
       const catalog = await fetchAvailableCatalog(settings)
       options.onProgress?.({
+        provider: "commandcode",
         type: "catalog",
         message: `${catalog.length} modelos detectados`,
       })
@@ -93,10 +102,17 @@ export function createCatalogController({ initialCompatibilityMatrix, writeCompa
         availableCatalog = deriveCatalogFromCompatibility(compatibilityMatrix)
         writeCompatibilityMatrix(compatibilityMatrix)
         syncOpenCodeConfig({
-          providerId: settings.providerId,
           host: settings.host,
           port: settings.port,
-          compatibilityMatrix,
+          providers: [
+            {
+              id: settings.providerId,
+              kind: "commandcode",
+              routePrefix: "cmdshim",
+              name: "OCG CommandCode",
+              compatibilityMatrix,
+            },
+          ],
         })
         log(`COMPAT refresh_done models=${Object.keys(next.models).length} mode=catalog`)
         return compatibilityMatrix
@@ -108,6 +124,7 @@ export function createCatalogController({ initialCompatibilityMatrix, writeCompa
         const row = catalog[rowIndex]
         const { id, name, context_length, catalog_capabilities, tags } = row
         options.onProgress?.({
+          provider: "commandcode",
           type: "model-start",
           index: rowIndex + 1,
           total: catalog.length,
@@ -134,6 +151,7 @@ export function createCatalogController({ initialCompatibilityMatrix, writeCompa
             last_probe_notes: tested.notes,
           }
           options.onProgress?.({
+            provider: "commandcode",
             type: "model-done",
             index: rowIndex + 1,
             total: catalog.length,
@@ -145,6 +163,7 @@ export function createCatalogController({ initialCompatibilityMatrix, writeCompa
 
         next.models[id] = tested
         options.onProgress?.({
+          provider: "commandcode",
           type: "model-done",
           index: rowIndex + 1,
           total: catalog.length,
@@ -168,10 +187,17 @@ export function createCatalogController({ initialCompatibilityMatrix, writeCompa
       availableCatalog = deriveCatalogFromCompatibility(compatibilityMatrix)
       writeCompatibilityMatrix(compatibilityMatrix)
       syncOpenCodeConfig({
-        providerId: settings.providerId,
         host: settings.host,
         port: settings.port,
-        compatibilityMatrix,
+        providers: [
+          {
+            id: settings.providerId,
+            kind: "commandcode",
+            routePrefix: "cmdshim",
+            name: "OCG CommandCode",
+            compatibilityMatrix,
+          },
+        ],
       })
       log(`COMPAT refresh_done models=${Object.keys(next.models).length}`)
       return compatibilityMatrix
