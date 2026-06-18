@@ -21,23 +21,26 @@ export function detectOpenCodeInstallations() {
   }
 }
 
-export function syncOpenCodeConfig({ providerId, host, port, compatibilityMatrix, createIfMissing = false }) {
+export function syncOpenCodeConfig({ host, port, providers = [], createIfMissing = false }) {
   const paths = getPaths()
   const secrets = readSecrets()
   if (!existsSync(paths.opencodeConfigFile) && !createIfMissing) return null
   ensureParentDir(paths.opencodeConfigFile)
   const config = readJson(paths.opencodeConfigFile) || { $schema: "https://opencode.ai/config.json" }
   config.provider ||= {}
-  config.provider[providerId] = {
-    npm: "@ai-sdk/openai-compatible",
-    name: "OCG CommandCode",
-    options: {
-      baseURL: `http://${host}:${port}/v1`,
-      headers: {
-        "x-ocg-token": secrets.shimAccessToken,
+  for (const provider of providers) {
+    if (!provider?.id || !provider?.compatibilityMatrix) continue
+    config.provider[provider.id] = {
+      npm: "@ai-sdk/openai-compatible",
+      name: provider.name,
+      options: {
+        baseURL: `http://${host}:${port}/${provider.routePrefix}/v1`,
+        headers: {
+          "x-ocg-token": secrets.shimAccessToken,
+        },
       },
-    },
-    models: buildModelConfig(compatibilityMatrix),
+      models: buildModelConfig(provider),
+    }
   }
   writeFileSync(paths.opencodeConfigFile, JSON.stringify(config, null, 2), "utf8")
   return paths.opencodeConfigFile
@@ -62,16 +65,20 @@ export function removeOpenCodeProvider(providerId) {
   return true
 }
 
-function buildModelConfig(compatibilityMatrix) {
+function buildModelConfig(provider) {
   const models = {}
-  const catalog = deriveCatalogFromCompatibility(compatibilityMatrix)
-  for (const { id, name, context_length } of catalog.length > 0 ? catalog : fallbackCatalog()) {
+  const compatibilityMatrix = provider.compatibilityMatrix
+  const derivedCatalog = deriveCatalogFromCompatibility(compatibilityMatrix)
+  const catalog = provider.kind === "commandcode"
+    ? (derivedCatalog.length > 0 ? derivedCatalog : fallbackCatalog())
+    : derivedCatalog
+  for (const { id, name, context_length } of catalog) {
     const compat = compatibilityMatrix?.models?.[id]
     if (compat?.status === "broken") continue
     const supportedInputs = resolveSupportedInputs(compat)
     const contextWindow = resolveContextWindow(id, context_length)
-    const supportsReasoning = resolveReasoningSupport(id, compat)
-    const interleavedField = commandCodeReasoningInterleavedField(id)
+    const supportsReasoning = resolveReasoningSupport(provider.kind, id, compat)
+    const interleavedField = provider.kind === "commandcode" ? commandCodeReasoningInterleavedField(id) : null
     models[id] = {
       name,
       limit: {
@@ -106,17 +113,18 @@ function buildModelConfig(compatibilityMatrix) {
           field: interleavedField,
         },
       } : {}),
-      ...(supportsCommandCodeEffortSelection(id, compat?.tags) ? {
-        variants: buildReasoningVariants(id),
+      ...(supportsReasoningVariants(provider.kind, id, compat) ? {
+        variants: buildReasoningVariants(provider.kind, id, compat),
       } : {}),
     }
   }
   return models
 }
 
-function resolveReasoningSupport(modelId, compat) {
+function resolveReasoningSupport(providerKind, modelId, compat) {
   const capabilityReasoning = compat?.capabilities?.reasoning?.supported
   if (typeof capabilityReasoning === "boolean") return capabilityReasoning
+  if (providerKind === "openrouter") return false
   return supportsCommandCodeReasoning(modelId, compat?.tags)
 }
 
@@ -137,7 +145,26 @@ function resolveSupportedInputs(compat) {
   return inputs
 }
 
-function buildReasoningVariants(modelId) {
+function supportsReasoningVariants(providerKind, modelId, compat) {
+  if (providerKind === "openrouter") {
+    return Array.isArray(compat?.capabilities?.reasoning?.supported_efforts)
+      && compat.capabilities.reasoning.supported_efforts.length > 0
+  }
+  return supportsCommandCodeEffortSelection(modelId, compat?.tags)
+}
+
+function buildReasoningVariants(providerKind, modelId, compat) {
+  if (providerKind === "openrouter") {
+    return Object.fromEntries(
+      compat.capabilities.reasoning.supported_efforts.map(level => ([
+        level,
+        {
+          reasoning_effort: level,
+        },
+      ])),
+    )
+  }
+
   return Object.fromEntries(
     commandCodeEffortLevelsForModel(modelId).map(level => ([
       level,

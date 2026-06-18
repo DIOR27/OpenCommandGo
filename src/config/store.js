@@ -6,8 +6,10 @@ const DEFAULT_CONFIG = {
   host: "127.0.0.1",
   port: 4310,
   providerId: "cmdshim",
+  openRouterProviderId: "openrouter-free",
   commandCodeBaseUrl: "https://api.commandcode.ai",
   commandCodeVersion: "0.32.2",
+  openRouterBaseUrl: "https://openrouter.ai/api/v1",
   compatibilityRefreshHours: 6,
   autostart: {
     enabled: false,
@@ -87,30 +89,41 @@ export function getRuntimeSettings() {
   const secrets = readSecrets()
   const apiKey =
     firstNonEmpty(
+      secrets.commandCodeApiKey,
       process.env.COMMANDCODE_API_KEY,
       process.env.COMMAND_CODE_API_KEY,
-      secrets.commandCodeApiKey,
+    ) || ""
+  const openRouterApiKey =
+    firstNonEmpty(
+      secrets.openRouterApiKey,
+      process.env.OPENROUTER_API_KEY,
+      process.env.OPEN_ROUTER_API_KEY,
     ) || ""
 
   return {
     host: firstNonEmpty(process.env.OCG_HOST, process.env.SHIM_HOST, process.env.CC_GO_SHIM_HOST, config.host) || DEFAULT_CONFIG.host,
     port: Number(firstNonEmpty(process.env.SHIM_PORT, process.env.CC_GO_SHIM_PORT, String(config.port || DEFAULT_CONFIG.port))),
     commandCodeApiKey: apiKey,
+    openRouterApiKey,
     shimAccessToken: firstNonEmpty(process.env.OCG_TOKEN, process.env.COMMANDCODE_SHIM_TOKEN, secrets.shimAccessToken) || "",
     commandCodeBaseUrl: String(firstNonEmpty(process.env.COMMANDCODE_BASE_URL, config.commandCodeBaseUrl) || DEFAULT_CONFIG.commandCodeBaseUrl).replace(/\/+$/, ""),
     commandCodeVersion: firstNonEmpty(process.env.COMMANDCODE_VERSION, process.env.COMMAND_CODE_CLI_VERSION, config.commandCodeVersion) || DEFAULT_CONFIG.commandCodeVersion,
+    openRouterBaseUrl: String(firstNonEmpty(process.env.OPENROUTER_BASE_URL, config.openRouterBaseUrl) || DEFAULT_CONFIG.openRouterBaseUrl).replace(/\/+$/, ""),
     compatibilityRefreshHours: Number(config.compatibilityRefreshHours || DEFAULT_CONFIG.compatibilityRefreshHours),
     providerId: config.providerId || DEFAULT_CONFIG.providerId,
+    openRouterProviderId: config.openRouterProviderId || DEFAULT_CONFIG.openRouterProviderId,
     allowRemoteHost: isEnabled(process.env.OCG_ALLOW_REMOTE) || isEnabled(process.env.COMMANDCODE_SHIM_ALLOW_REMOTE) || isEnabled(process.env.CC_GO_SHIM_ALLOW_REMOTE),
   }
 }
 
-export function readCompatibilityMatrix() {
+export function readCompatibilityMatrix(provider = "commandcode") {
   const paths = getPaths()
-  const current = readJsonIfExists(paths.compatibilityFile)
+  const current = readJsonIfExists(resolveCompatibilityFile(paths, provider))
   if (current) return current
-  const legacy = readJsonIfExists(paths.legacyCompatibilityFile)
-  if (legacy) return legacy
+  if (provider === "commandcode") {
+    const legacy = readJsonIfExists(paths.legacyCompatibilityFile)
+    if (legacy) return legacy
+  }
   return {
     updated_at: null,
     refresh_interval_hours: DEFAULT_CONFIG.compatibilityRefreshHours,
@@ -118,11 +131,12 @@ export function readCompatibilityMatrix() {
   }
 }
 
-export function writeCompatibilityMatrix(matrix) {
+export function writeCompatibilityMatrix(matrix, provider = "commandcode") {
   const paths = getPaths()
+  const file = resolveCompatibilityFile(paths, provider)
   ensureDir(paths.dataDir)
-  ensureParentDir(paths.compatibilityFile)
-  writeFileSync(paths.compatibilityFile, JSON.stringify(matrix, null, 2), "utf8")
+  ensureParentDir(file)
+  writeFileSync(file, JSON.stringify(matrix, null, 2), "utf8")
 }
 
 export function readPid() {
@@ -170,6 +184,12 @@ function readJsonIfExists(file) {
   } catch {
     return null
   }
+}
+
+function resolveCompatibilityFile(paths, provider) {
+  if (provider === "openrouter") return paths.compatibilityOpenRouterFile
+  if (provider === "commandcode") return paths.compatibilityCommandCodeFile
+  return paths.compatibilityFile
 }
 
 function firstNonEmpty(...values) {
