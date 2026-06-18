@@ -13,6 +13,7 @@ describe("parseRefreshModelsArgs", () => {
       concurrency: 2,
       yes: true,
       probe: true,
+      provider: "all",
     })
   })
 
@@ -23,6 +24,7 @@ describe("parseRefreshModelsArgs", () => {
       concurrency: 6,
       yes: false,
       probe: true,
+      provider: "all",
     })
   })
 
@@ -33,6 +35,18 @@ describe("parseRefreshModelsArgs", () => {
       concurrency: undefined,
       yes: false,
       probe: true,
+      provider: "all",
+    })
+  })
+
+  it("parses explicit provider selection", () => {
+    const parsed = parseRefreshModelsArgs(["--provider", "openrouter", "--probe"])
+    assert.deepStrictEqual(parsed, {
+      full: false,
+      concurrency: undefined,
+      yes: false,
+      probe: true,
+      provider: "openrouter",
     })
   })
 })

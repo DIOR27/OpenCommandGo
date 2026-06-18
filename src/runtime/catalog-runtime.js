@@ -19,10 +19,17 @@ export function createCatalogController({ initialCompatibilityMatrix, writeCompa
     buildModelList: () => availableCatalog.map(model => buildModelDescriptor(model, compatibilityMatrix?.models?.[model.id])),
     syncProviderConfig(settings) {
       syncOpenCodeConfig({
-        providerId: settings.providerId,
         host: settings.host,
         port: settings.port,
-        compatibilityMatrix,
+        providers: [
+          {
+            id: settings.providerId,
+            kind: "commandcode",
+            routePrefix: "cmdshim",
+            name: "OCG CommandCode",
+            compatibilityMatrix,
+          },
+        ],
       })
     },
     async refreshNow(settings, options = {}) {
@@ -93,10 +100,17 @@ export function createCatalogController({ initialCompatibilityMatrix, writeCompa
         availableCatalog = deriveCatalogFromCompatibility(compatibilityMatrix)
         writeCompatibilityMatrix(compatibilityMatrix)
         syncOpenCodeConfig({
-          providerId: settings.providerId,
           host: settings.host,
           port: settings.port,
-          compatibilityMatrix,
+          providers: [
+            {
+              id: settings.providerId,
+              kind: "commandcode",
+              routePrefix: "cmdshim",
+              name: "OCG CommandCode",
+              compatibilityMatrix,
+            },
+          ],
         })
         log(`COMPAT refresh_done models=${Object.keys(next.models).length} mode=catalog`)
         return compatibilityMatrix
@@ -168,10 +182,17 @@ export function createCatalogController({ initialCompatibilityMatrix, writeCompa
       availableCatalog = deriveCatalogFromCompatibility(compatibilityMatrix)
       writeCompatibilityMatrix(compatibilityMatrix)
       syncOpenCodeConfig({
-        providerId: settings.providerId,
         host: settings.host,
         port: settings.port,
-        compatibilityMatrix,
+        providers: [
+          {
+            id: settings.providerId,
+            kind: "commandcode",
+            routePrefix: "cmdshim",
+            name: "OCG CommandCode",
+            compatibilityMatrix,
+          },
+        ],
       })
       log(`COMPAT refresh_done models=${Object.keys(next.models).length}`)
       return compatibilityMatrix

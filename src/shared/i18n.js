@@ -122,8 +122,9 @@ Commands:
   autostart <enable|disable|status>
   status
   doctor
-  refresh-models [--probe|--full] [--parallel N] [--yes]
+  refresh-models [--probe|--full] [--provider NAME] [--parallel N] [--yes]
   set-api-key
+  set-openrouter-api-key
   reset
   uninstall`,
 
@@ -293,8 +294,9 @@ Comandos:
   autostart <enable|disable|status>
   status
   doctor
-  refresh-models [--probe|--full] [--parallel N] [--yes]
+  refresh-models [--probe|--full] [--provider NAME] [--parallel N] [--yes]
   set-api-key
+  set-openrouter-api-key
   reset
   uninstall`,
 

@@ -47,12 +47,17 @@ describe("ocg CLI integration", () => {
     const provider = opencodeConfig?.provider?.cmdshim
     assert.ok(provider, "expected provider to be synced into OpenCode config")
     assert.equal(provider.name, "OCG CommandCode")
-    assert.equal(provider.options?.baseURL, `http://127.0.0.1:${ctx.port}/v1`)
+    assert.equal(provider.options?.baseURL, `http://127.0.0.1:${ctx.port}/cmdshim/v1`)
     assert.equal(provider.options?.headers?.["x-ocg-token"], secrets.shimAccessToken)
     assert.deepStrictEqual(provider.models["xiaomi/MiMo-V2.5"]?.modalities?.input, ["text", "image", "pdf", "audio", "video"])
     assert.equal(provider.models["xiaomi/MiMo-V2.5"]?.capabilities?.audio?.supported, true)
     assert.equal(provider.models["xiaomi/MiMo-V2.5"]?.capabilities?.video?.supported, true)
     assert.equal(provider.models["xiaomi/MiMo-V2.5"]?.reasoning, true)
+
+    const openRouterProvider = opencodeConfig?.provider?.["openrouter-free"]
+    assert.ok(openRouterProvider, "expected openrouter provider to be synced into OpenCode config")
+    assert.equal(openRouterProvider.name, "OCG OpenRouter Free")
+    assert.equal(openRouterProvider.options?.baseURL, `http://127.0.0.1:${ctx.port}/openrouter/v1`)
 
     const second = await runCli(["start", "--background"], ctx.env)
     assert.equal(second.code, 0, second.stderr)
@@ -509,7 +514,120 @@ describe("ocg chat/completions integration", () => {
   })
 })
 
-function createIsolatedCliContext(port, mockPort) {
+describe("ocg openrouter integration", () => {
+  it("syncs free OpenRouter models and proxies non-stream chat completions", { timeout: 20000 }, async () => {
+    const commandCodeMock = await startMockCommandCodeServer()
+    const openRouterMock = await startMockOpenRouterServer()
+    const ctx = createIsolatedCliContext(await getFreePort(), commandCodeMock.port, {
+      openRouterPort: openRouterMock.port,
+      openRouterApiKey: "test-openrouter-key",
+    })
+    registerCleanup(ctx, commandCodeMock, openRouterMock)
+    seedOpenCodeConfig(ctx.paths.opencodeConfigFile)
+
+    const started = await runCli(["start", "--background"], ctx.env)
+    assert.equal(started.code, 0, started.stderr)
+
+    const secrets = readJson(ctx.paths.secretsFile)
+    await waitForHealth(ctx.port, secrets.shimAccessToken)
+
+    const opencodeConfig = readJson(ctx.paths.opencodeConfigFile)
+    const provider = opencodeConfig?.provider?.["openrouter-free"]
+    assert.ok(provider)
+    assert.equal(provider.models["meta-llama/llama-4-scout:free"]?.limit?.context, 256000)
+    assert.deepStrictEqual(provider.models["meta-llama/llama-4-scout:free"]?.modalities?.input, ["text", "image"])
+    assert.equal(provider.models["meta-llama/llama-4-scout:free"]?.reasoning, true)
+    assert.equal(provider.models["meta-llama/llama-4-scout:free"]?.variants?.minimal?.reasoning_effort, "minimal")
+
+    const response = await postJson(`http://127.0.0.1:${ctx.port}/openrouter/v1/chat/completions`, {
+      model: "meta-llama/llama-4-scout:free",
+      messages: [{ role: "user", content: "hola openrouter" }],
+    }, secrets.shimAccessToken)
+
+    assert.equal(response.status, 200)
+    assert.equal(response.json.model, "meta-llama/llama-4-scout:free")
+    assert.equal(response.json.choices[0].message.content, "Hola desde OpenRouter")
+
+    const upstream = openRouterMock.takeChatRequests()
+    assert.equal(upstream.length, 1)
+    assert.equal(upstream[0].headers.authorization, "Bearer test-openrouter-key")
+    assert.equal(upstream[0].payload.model, "meta-llama/llama-4-scout:free")
+  })
+
+  it("normalizes multimodal image payloads before forwarding to OpenRouter", { timeout: 20000 }, async () => {
+    const commandCodeMock = await startMockCommandCodeServer()
+    const openRouterMock = await startMockOpenRouterServer()
+    const ctx = createIsolatedCliContext(await getFreePort(), commandCodeMock.port, {
+      openRouterPort: openRouterMock.port,
+      openRouterApiKey: "test-openrouter-key",
+    })
+    registerCleanup(ctx, commandCodeMock, openRouterMock)
+
+    await runCli(["start", "--background"], ctx.env)
+    const secrets = readJson(ctx.paths.secretsFile)
+    await waitForHealth(ctx.port, secrets.shimAccessToken)
+
+    const response = await postJson(`http://127.0.0.1:${ctx.port}/openrouter/v1/chat/completions`, {
+      model: "meta-llama/llama-4-scout:free",
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "input_text", text: "describí la imagen" },
+            {
+              type: "image",
+              source: {
+                type: "base64",
+                media_type: "image/png",
+                data: "QUJDRA==",
+              },
+            },
+          ],
+        },
+      ],
+    }, secrets.shimAccessToken)
+
+    assert.equal(response.status, 200)
+
+    const upstream = openRouterMock.takeChatRequests()
+    assert.equal(upstream.length, 1)
+    assert.deepStrictEqual(upstream[0].payload.messages[0].content, [
+      { type: "text", text: "describí la imagen" },
+      {
+        type: "image_url",
+        image_url: {
+          url: "data:image/png;base64,QUJDRA==",
+        },
+      },
+    ])
+  })
+
+  it("survives an interrupted OpenRouter stream without resetting the client socket", { timeout: 20000 }, async () => {
+    const commandCodeMock = await startMockCommandCodeServer()
+    const openRouterMock = await startMockOpenRouterServer({ breakStream: true })
+    const ctx = createIsolatedCliContext(await getFreePort(), commandCodeMock.port, {
+      openRouterPort: openRouterMock.port,
+      openRouterApiKey: "test-openrouter-key",
+    })
+    registerCleanup(ctx, commandCodeMock, openRouterMock)
+
+    await runCli(["start", "--background"], ctx.env)
+    const secrets = readJson(ctx.paths.secretsFile)
+    await waitForHealth(ctx.port, secrets.shimAccessToken)
+
+    const streamed = await postJsonStream(`http://127.0.0.1:${ctx.port}/openrouter/v1/chat/completions`, {
+      model: "meta-llama/llama-4-scout:free",
+      stream: true,
+      messages: [{ role: "user", content: "hola" }],
+    }, secrets.shimAccessToken)
+
+    assert.equal(streamed.status, 200)
+    assert.match(streamed.text, /OPENROUTER PROCESSING|chat\.completion\.chunk|data: \[DONE\]/)
+    assert.match(streamed.text, /data: \[DONE\]/)
+  })
+})
+
+function createIsolatedCliContext(port, mockPort, options = {}) {
   const root = mkdtempSync(join(tmpdir(), "ocg-integration-"))
   const userProfile = join(root, "user")
   mkdirSync(userProfile, { recursive: true })
@@ -527,6 +645,12 @@ function createIsolatedCliContext(port, mockPort) {
       OCG_WATCHDOG_MAX_FAILURES: "2",
       OCG_WATCHDOG_RESTART_DELAY_MS: "250",
       OCG_WATCHDOG_READY_TIMEOUT_MS: "2500",
+      ...(options.openRouterApiKey ? {
+        OPENROUTER_API_KEY: options.openRouterApiKey,
+      } : {}),
+      ...(options.openRouterPort ? {
+        OPENROUTER_BASE_URL: `http://127.0.0.1:${options.openRouterPort}/api/v1`,
+      } : {}),
     },
     paths: {
       dataDir: join(root, "ocg"),
@@ -545,7 +669,7 @@ function seedOpenCodeConfig(file) {
   writeFileSync(file, JSON.stringify({ $schema: "https://opencode.ai/config.json" }, null, 2), "utf8")
 }
 
-function registerCleanup(ctx, mock) {
+function registerCleanup(ctx, ...mocks) {
   cleanupTasks.push(async () => {
     try {
       await runCli(["stop"], ctx.env, { timeoutMs: 8000 })
@@ -555,7 +679,9 @@ function registerCleanup(ctx, mock) {
     killPid(readPidFile(ctx.paths.pidFile))
     killPid(readPidFile(ctx.paths.watchdogPidFile))
     rmSync(ctx.root, { recursive: true, force: true })
-    await mock.close()
+    for (const mock of mocks) {
+      await mock.close()
+    }
   })
 }
 
@@ -708,6 +834,96 @@ async function startMockCommandCodeServer() {
     },
     takeAlphaRequests() {
       return alphaRequests.splice(0, alphaRequests.length)
+    },
+    close: () => new Promise(resolve => server.close(resolve)),
+  }
+}
+
+async function startMockOpenRouterServer(options = {}) {
+  const chatRequests = []
+  const server = createServer(async (req, res) => {
+    if (req.method === "GET" && req.url === "/api/v1/models") {
+      res.writeHead(200, { "Content-Type": "application/json" })
+      res.end(JSON.stringify({
+        data: [
+          {
+            id: "meta-llama/llama-4-scout:free",
+            name: "Llama 4 Scout (free)",
+            context_length: 256000,
+            architecture: {
+              input_modalities: ["text", "image"],
+              output_modalities: ["text"],
+            },
+            supported_parameters: ["reasoning", "max_tokens"],
+            reasoning: {
+              mandatory: false,
+              supported_efforts: ["minimal", "high"],
+            },
+            pricing: {
+              prompt: "0",
+              completion: "0",
+            },
+            top_provider: {
+              context_length: 256000,
+              max_completion_tokens: 8192,
+            },
+          },
+        ],
+      }))
+      return
+    }
+
+    if (req.method === "POST" && req.url === "/api/v1/chat/completions") {
+      const body = await readRequestBody(req)
+      chatRequests.push({
+        headers: req.headers,
+        payload: body ? JSON.parse(body) : null,
+      })
+
+      if (body && JSON.parse(body).stream === true && options.breakStream) {
+        res.writeHead(200, { "Content-Type": "text/event-stream; charset=utf-8" })
+        res.write(": OPENROUTER PROCESSING\n\n")
+        res.write("data: {\"id\":\"chunk_1\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"meta-llama/llama-4-scout:free\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"Hola\"},\"finish_reason\":null}]}\n\n")
+        await new Promise(resolve => setTimeout(resolve, 25))
+        res.destroy()
+        return
+      }
+
+      res.writeHead(200, { "Content-Type": "application/json" })
+      res.end(JSON.stringify({
+        id: "chatcmpl-openrouter",
+        object: "chat.completion",
+        created: 1,
+        model: "meta-llama/llama-4-scout:free",
+        choices: [
+          {
+            index: 0,
+            message: {
+              role: "assistant",
+              content: "Hola desde OpenRouter",
+            },
+            finish_reason: "stop",
+          },
+        ],
+        usage: {
+          prompt_tokens: 3,
+          completion_tokens: 4,
+          total_tokens: 7,
+        },
+      }))
+      return
+    }
+
+    res.writeHead(404, { "Content-Type": "application/json" })
+    res.end(JSON.stringify({ error: "not found" }))
+  })
+
+  await new Promise(resolve => server.listen(0, "127.0.0.1", resolve))
+  const address = server.address()
+  return {
+    port: address.port,
+    takeChatRequests() {
+      return chatRequests.splice(0, chatRequests.length)
     },
     close: () => new Promise(resolve => server.close(resolve)),
   }
