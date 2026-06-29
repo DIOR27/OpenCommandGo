@@ -77,7 +77,7 @@ function buildModelConfig(provider) {
     if (compat?.status === "broken") continue
     const supportedInputs = resolveSupportedInputs(compat)
     const contextWindow = resolveContextWindow(id, context_length)
-    const supportsReasoning = resolveReasoningSupport(provider.kind, id, compat)
+    const supportsReasoning = resolveReasoningSupport(id, compat)
     const interleavedField = provider.kind === "commandcode" ? commandCodeReasoningInterleavedField(id) : null
     models[id] = {
       name,
@@ -113,18 +113,17 @@ function buildModelConfig(provider) {
           field: interleavedField,
         },
       } : {}),
-      ...(supportsReasoningVariants(provider.kind, id, compat) ? {
-        variants: buildReasoningVariants(provider.kind, id, compat),
+      ...(supportsReasoningVariants(id, compat) ? {
+        variants: buildReasoningVariants(id, compat),
       } : {}),
     }
   }
   return models
 }
 
-function resolveReasoningSupport(providerKind, modelId, compat) {
+function resolveReasoningSupport(modelId, compat) {
   const capabilityReasoning = compat?.capabilities?.reasoning?.supported
   if (typeof capabilityReasoning === "boolean") return capabilityReasoning
-  if (providerKind === "openrouter") return false
   return supportsCommandCodeReasoning(modelId, compat?.tags)
 }
 
@@ -145,26 +144,11 @@ function resolveSupportedInputs(compat) {
   return inputs
 }
 
-function supportsReasoningVariants(providerKind, modelId, compat) {
-  if (providerKind === "openrouter") {
-    return Array.isArray(compat?.capabilities?.reasoning?.supported_efforts)
-      && compat.capabilities.reasoning.supported_efforts.length > 0
-  }
+function supportsReasoningVariants(modelId, compat) {
   return supportsCommandCodeEffortSelection(modelId, compat?.tags)
 }
 
-function buildReasoningVariants(providerKind, modelId, compat) {
-  if (providerKind === "openrouter") {
-    return Object.fromEntries(
-      compat.capabilities.reasoning.supported_efforts.map(level => ([
-        level,
-        {
-          reasoning_effort: level,
-        },
-      ])),
-    )
-  }
-
+function buildReasoningVariants(modelId, compat) {
   return Object.fromEntries(
     commandCodeEffortLevelsForModel(modelId).map(level => ([
       level,

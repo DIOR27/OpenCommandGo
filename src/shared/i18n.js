@@ -124,7 +124,6 @@ Commands:
   doctor
   refresh-models [--probe|--full] [--provider NAME] [--parallel N] [--yes]
   set-api-key
-  set-openrouter-api-key
   reset
   uninstall`,
 
@@ -296,7 +295,6 @@ Comandos:
   doctor
   refresh-models [--probe|--full] [--provider NAME] [--parallel N] [--yes]
   set-api-key
-  set-openrouter-api-key
   reset
   uninstall`,
 

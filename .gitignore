@@ -1,3 +1,6 @@
 .env.local
 logs/
 nul
+.atl/
+.commandcode/
+openspec/

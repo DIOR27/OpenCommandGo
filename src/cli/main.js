@@ -21,9 +21,6 @@ export async function runCli(args) {
     case "set-api-key":
       await setApiKey()
       return
-    case "set-openrouter-api-key":
-      await setOpenRouterApiKey()
-      return
     case "start":
       await startCommand(rest)
       return
@@ -87,7 +84,6 @@ async function runSetup() {
       t("setup.api_key.prompt", currentSecrets.commandCodeApiKey ? t("misc.enter_keep") : ""),
       currentSecrets.commandCodeApiKey || "",
     )
-    const openRouterApiKey = await rl.question(`OpenRouter API key${currentSecrets.openRouterApiKey ? ` ${t("misc.enter_keep")}` : ""}: `)
 
     const portInput = await rl.question(t("setup.port.prompt", currentConfig.port))
     const port = normalizePort(portInput, currentConfig.port)
@@ -108,7 +104,6 @@ async function runSetup() {
     writeSecrets({
       ...currentSecrets,
       commandCodeApiKey: apiKey,
-      openRouterApiKey: openRouterApiKey.trim() || currentSecrets.openRouterApiKey || "",
     })
 
     if (detected.configFound) {
@@ -122,13 +117,6 @@ async function runSetup() {
             routePrefix: "ocg",
             name: "OCG CommandCode",
             compatibilityMatrix: readCompatibilityMatrix("commandcode"),
-          },
-          {
-            id: nextConfig.openRouterProviderId,
-            kind: "openrouter",
-            routePrefix: "openrouter",
-            name: "OCG OpenRouter Free",
-            compatibilityMatrix: readCompatibilityMatrix("openrouter"),
           },
         ],
         createIfMissing: false,
@@ -171,25 +159,6 @@ async function setApiKey() {
       commandCodeApiKey: apiKey,
     })
     console.log(t("setapikey.saved", getPaths().secretsFile))
-  } finally {
-    rl.close()
-  }
-}
-
-async function setOpenRouterApiKey() {
-  const rl = createInterface({ input: stdin, output: stdout })
-  try {
-    const currentSecrets = readSecrets()
-    const apiKey = await askRequired(
-      rl,
-      `OpenRouter API key${currentSecrets.openRouterApiKey ? ` ${t("misc.enter_keep")}` : ""}: `,
-      currentSecrets.openRouterApiKey || "",
-    )
-    writeSecrets({
-      ...currentSecrets,
-      openRouterApiKey: apiKey,
-    })
-    console.log(`OpenRouter API key guardada en: ${getPaths().secretsFile}`)
   } finally {
     rl.close()
   }
@@ -268,9 +237,7 @@ async function statusCommand() {
   const health = await readHealth(settings.host, settings.port)
   const autostart = await getAutostartStatus()
   const compatibility = readCompatibilityMatrix()
-  const openRouterCompatibility = readCompatibilityMatrix("openrouter")
   const modelCount = Object.values(compatibility.models || {}).filter(model => model?.status !== "broken").length
-  const openRouterModelCount = Object.values(openRouterCompatibility.models || {}).filter(model => model?.status !== "broken").length
   console.log(t("status.shim", health ? t("status.active") : t("status.inactive"), settings.host, settings.port))
   if (health) console.log(t("status.provider", health.provider))
   console.log(t("status.config", getPaths().configFile))
@@ -282,7 +249,6 @@ async function statusCommand() {
   console.log(t("status.autostart_enabled", autostart.enabled ? t("status.yes") : t("status.no")))
   console.log(t("status.autostart_provider", autostart.provider || t("status.no")))
   console.log(t("status.models_count", modelCount))
-  console.log(`Modelos OpenRouter gratis en catálogo: ${openRouterModelCount}`)
 }
 
 async function doctorCommand() {
@@ -293,9 +259,7 @@ async function doctorCommand() {
   const provider = inspectOpenCodeProvider(config.providerId)
   const autostart = await getAutostartStatus()
   const compatibility = readCompatibilityMatrix("commandcode")
-  const openRouterCompatibility = readCompatibilityMatrix("openrouter")
   const modelCount = Object.values(compatibility.models || {}).filter(model => model?.status !== "broken").length
-  const openRouterModelCount = Object.values(openRouterCompatibility.models || {}).filter(model => model?.status !== "broken").length
 
   // Local checks
   console.log(t("doctor.shim_health", health ? t("doctor.up") : t("doctor.down")))
@@ -325,7 +289,6 @@ async function doctorCommand() {
   console.log(t("doctor.autostart", autostart.enabled ? t("status.yes") : t("status.no")))
   console.log(t("doctor.autostart_provider", autostart.provider || t("misc.unknown")))
   console.log(t("doctor.models", modelCount))
-  console.log(`Modelos OpenRouter gratis: ${openRouterModelCount}`)
 
   // Remote checks (only if API key exists)
   if (settings.commandCodeApiKey) {
@@ -346,8 +309,6 @@ async function doctorCommand() {
   } else {
     console.log(t("doctor.api_key", t("doctor.missing")))
   }
-
-  console.log(`OpenRouter API key: ${settings.openRouterApiKey ? t("doctor.api_key_yes") : t("doctor.missing")}`)
 }
 
 async function checkConnectivity(baseUrl) {
@@ -411,19 +372,12 @@ async function refreshModelsCommand(args = []) {
   const commandCodeUseful = Object.entries(matrix.commandcode?.models || {})
     .filter(([, info]) => info?.status !== "broken")
     .map(([id]) => id)
-  const openRouterUseful = Object.entries(matrix.openrouter?.models || {})
-    .filter(([, info]) => info?.status !== "broken")
-    .map(([id]) => id)
   console.log(`CommandCode: ${commandCodeUseful.length} modelos disponibles`)
-  console.log(`OpenRouter Free: ${openRouterUseful.length} modelos disponibles`)
 
   const shouldShowModels = options.showModels || options.provider !== "all"
   if (shouldShowModels) {
     if (options.provider === "all" || options.provider === "commandcode") {
       printModelList("CommandCode", commandCodeUseful)
-    }
-    if (options.provider === "all" || options.provider === "openrouter") {
-      printModelList("OpenRouter Free", openRouterUseful)
     }
   }
 }
@@ -464,14 +418,14 @@ export function parseRefreshModelsArgs(args) {
 
     if (value === "--provider") {
       const next = String(values[index + 1] || "").trim().toLowerCase()
-      if (["all", "commandcode", "openrouter"].includes(next)) {
+      if (["all", "commandcode"].includes(next)) {
         provider = next
         index += 1
       }
       continue
     }
 
-    const providerMatch = value.match(/^--provider=(all|commandcode|openrouter)$/)
+    const providerMatch = value.match(/^--provider=(all|commandcode)$/)
     if (providerMatch) {
       provider = providerMatch[1]
       continue
@@ -507,7 +461,7 @@ function printModelList(label, modelIds) {
 }
 
 function resolveRefreshProviderLabel(provider) {
-  return provider === "openrouter" ? "Catálogo OpenRouter" : "Catálogo CommandCode"
+  return "Catálogo CommandCode"
 }
 
 async function resolveRefreshProbeConsent(options) {
@@ -740,14 +694,12 @@ async function uninstallCommand() {
   await disableAutostart()
   const config = readConfig()
   const removedProvider = removeOpenCodeProvider(config.providerId)
-  const removedOpenRouterProvider = removeOpenCodeProvider(config.openRouterProviderId)
   const dataDir = getPaths().dataDir
   if (existsSync(dataDir)) {
     rmSync(dataDir, { recursive: true, force: true })
   }
   clearPid()
   console.log(t(removedProvider ? "uninstall.provider_removed" : "uninstall.provider_not_found"))
-  if (removedOpenRouterProvider) console.log("Proveedor OpenRouter removido de OpenCode.")
   console.log(t("uninstall.data_deleted", dataDir))
   console.log(t("uninstall.done"))
 }

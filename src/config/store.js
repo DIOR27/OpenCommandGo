@@ -6,13 +6,8 @@ const DEFAULT_CONFIG = {
   host: "127.0.0.1",
   port: 4310,
   providerId: "ocg",
-  openRouterProviderId: "openrouter-free",
   commandCodeBaseUrl: "https://api.commandcode.ai",
   commandCodeVersion: "0.32.2",
-  openRouterBaseUrl: "https://openrouter.ai/api/v1",
-  openRouterReferer: "https://github.com/DIOR27/OpenCommandGo",
-  openRouterTitle: "OpenCommandGo",
-  openRouterCategories: "cli-agent",
   compatibilityRefreshHours: 6,
   autostart: {
     enabled: false,
@@ -96,28 +91,15 @@ export function getRuntimeSettings() {
       process.env.COMMANDCODE_API_KEY,
       process.env.COMMAND_CODE_API_KEY,
     ) || ""
-  const openRouterApiKey =
-    firstNonEmpty(
-      secrets.openRouterApiKey,
-      process.env.OPENROUTER_API_KEY,
-      process.env.OPEN_ROUTER_API_KEY,
-    ) || ""
-
   return {
     host: firstNonEmpty(process.env.OCG_HOST, process.env.SHIM_HOST, process.env.CC_GO_SHIM_HOST, config.host) || DEFAULT_CONFIG.host,
     port: Number(firstNonEmpty(process.env.SHIM_PORT, process.env.CC_GO_SHIM_PORT, String(config.port || DEFAULT_CONFIG.port))),
     commandCodeApiKey: apiKey,
-    openRouterApiKey,
     shimAccessToken: firstNonEmpty(process.env.OCG_TOKEN, process.env.COMMANDCODE_SHIM_TOKEN, secrets.shimAccessToken) || "",
     commandCodeBaseUrl: String(firstNonEmpty(process.env.COMMANDCODE_BASE_URL, config.commandCodeBaseUrl) || DEFAULT_CONFIG.commandCodeBaseUrl).replace(/\/+$/, ""),
     commandCodeVersion: firstNonEmpty(process.env.COMMANDCODE_VERSION, process.env.COMMAND_CODE_CLI_VERSION, config.commandCodeVersion) || DEFAULT_CONFIG.commandCodeVersion,
-    openRouterBaseUrl: String(firstNonEmpty(process.env.OPENROUTER_BASE_URL, config.openRouterBaseUrl) || DEFAULT_CONFIG.openRouterBaseUrl).replace(/\/+$/, ""),
-    openRouterReferer: firstNonEmpty(process.env.OPENROUTER_REFERER, config.openRouterReferer) || DEFAULT_CONFIG.openRouterReferer,
-    openRouterTitle: firstNonEmpty(process.env.OPENROUTER_TITLE, config.openRouterTitle) || DEFAULT_CONFIG.openRouterTitle,
-    openRouterCategories: firstNonEmpty(process.env.OPENROUTER_CATEGORIES, config.openRouterCategories) || DEFAULT_CONFIG.openRouterCategories,
     compatibilityRefreshHours: Number(config.compatibilityRefreshHours || DEFAULT_CONFIG.compatibilityRefreshHours),
     providerId: config.providerId || DEFAULT_CONFIG.providerId,
-    openRouterProviderId: config.openRouterProviderId || DEFAULT_CONFIG.openRouterProviderId,
     allowRemoteHost: isEnabled(process.env.OCG_ALLOW_REMOTE) || isEnabled(process.env.COMMANDCODE_SHIM_ALLOW_REMOTE) || isEnabled(process.env.CC_GO_SHIM_ALLOW_REMOTE),
   }
 }
@@ -193,7 +175,6 @@ function readJsonIfExists(file) {
 }
 
 function resolveCompatibilityFile(paths, provider) {
-  if (provider === "openrouter") return paths.compatibilityOpenRouterFile
   if (provider === "commandcode") return paths.compatibilityCommandCodeFile
   return paths.compatibilityFile
 }

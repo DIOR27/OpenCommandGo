@@ -7,8 +7,6 @@ import { buildOpenAICompletion, callCommandCodeAlpha, startCommandCodeAlphaStrea
 import { createCatalogController } from "./catalog-runtime.js"
 import { isLoopbackHost, json, openAIError, readJson, requireShimAuth } from "./http-utils.js"
 import { installProcessLifecycleHandlers } from "./lifecycle.js"
-import { createOpenRouterCatalogController } from "./openrouter-catalog.js"
-import { callOpenRouter, pipeOpenRouterStream, startOpenRouterStream } from "./openrouter-bridge.js"
 import { runtimeLog } from "./runtime-log.js"
 
 let currentServer = null
@@ -18,11 +16,6 @@ const commandCodeCatalogController = createCatalogController({
   writeCompatibilityMatrix: matrix => writeCompatibilityMatrix(matrix, "commandcode"),
   log,
 })
-const openRouterCatalogController = createOpenRouterCatalogController({
-  initialCompatibilityMatrix: readCompatibilityMatrix("openrouter"),
-  writeCompatibilityMatrix: matrix => writeCompatibilityMatrix(matrix, "openrouter"),
-  log,
-})
 
 export async function refreshModelCatalogNow(options = {}) {
   const settings = getRuntimeSettings()
@@ -30,25 +23,11 @@ export async function refreshModelCatalogNow(options = {}) {
 
   if (provider === "commandcode") {
     const matrix = await commandCodeCatalogController.refreshNow(settings, options)
-    openRouterCatalogController.syncProviderConfig(settings, matrix)
-    return { commandcode: matrix, openrouter: openRouterCatalogController.getCompatibilityMatrix() }
-  }
-
-  if (provider === "openrouter") {
-    if (!settings.openRouterApiKey) {
-      return { commandcode: commandCodeCatalogController.getCompatibilityMatrix(), openrouter: openRouterCatalogController.getCompatibilityMatrix() }
-    }
-    const matrix = await openRouterCatalogController.refreshNow(settings, options)
-    openRouterCatalogController.syncProviderConfig(settings, commandCodeCatalogController.getCompatibilityMatrix())
-    return { commandcode: commandCodeCatalogController.getCompatibilityMatrix(), openrouter: matrix }
+    return { commandcode: matrix }
   }
 
   const commandcode = await commandCodeCatalogController.refreshNow(settings, options)
-  const openrouter = settings.openRouterApiKey
-    ? await openRouterCatalogController.refreshNow(settings, options)
-    : openRouterCatalogController.getCompatibilityMatrix()
-  openRouterCatalogController.syncProviderConfig(settings, commandcode)
-  return { commandcode, openrouter }
+  return { commandcode }
 }
 
 export async function startServer() {
@@ -61,7 +40,6 @@ export async function startServer() {
 
   const paths = getPaths()
   ensureDir(paths.logDir)
-  openRouterCatalogController.syncProviderConfig(settings, commandCodeCatalogController.getCompatibilityMatrix())
 
   const server = createServer(async (req, res) => {
     try {
@@ -89,10 +67,6 @@ export async function startServer() {
               models: availableCatalog.length,
               updated_at: compatibilityMatrix.updated_at || null,
             },
-            openrouter: {
-              models: openRouterCatalogController.getAvailableCatalog().length,
-              updated_at: openRouterCatalogController.getCompatibilityMatrix().updated_at || null,
-            },
           },
         })
       }
@@ -118,7 +92,6 @@ export async function startServer() {
         if (!requireShimAuth(req, res, settings)) return
         return json(res, 200, {
           commandcode: commandCodeCatalogController.getCompatibilityMatrix(),
-          openrouter: openRouterCatalogController.getCompatibilityMatrix(),
         })
       }
 
@@ -127,14 +100,6 @@ export async function startServer() {
         return json(res, 200, {
           object: "list",
           data: commandCodeCatalogController.buildModelList(),
-        })
-      }
-
-      if (req.method === "GET" && url.pathname === "/openrouter/v1/models") {
-        if (!requireShimAuth(req, res, settings)) return
-        return json(res, 200, {
-          object: "list",
-          data: openRouterCatalogController.buildModelList(),
         })
       }
 
@@ -165,33 +130,6 @@ export async function startServer() {
         return json(res, 200, buildOpenAICompletion(model, upstream))
       }
 
-      if (req.method === "POST" && url.pathname === "/openrouter/v1/chat/completions") {
-        if (!requireShimAuth(req, res, settings)) return
-        if (!settings.openRouterApiKey) {
-          return json(res, 500, openAIError("missing_api_key", "Falta OpenRouter API key"))
-        }
-
-        const body = await readJson(req)
-        if (!body || typeof body !== "object") {
-          return json(res, 400, openAIError("invalid_request_error", "Body JSON inválido"))
-        }
-
-        const model = typeof body.model === "string" ? body.model.trim() : ""
-        const allowed = new Set(openRouterCatalogController.getAvailableCatalog().map(entry => entry.id))
-        if (!allowed.has(model)) {
-          return json(res, 400, openAIError("model_not_allowed", `Modelo OpenRouter gratis no permitido: ${model || "(vacío)"}`))
-        }
-
-        if (body.stream === true) {
-          const upstream = await startOpenRouterStream(body, settings)
-          await pipeOpenRouterStream(res, upstream)
-          return
-        }
-
-        const upstream = await callOpenRouter(body, settings)
-        return json(res, 200, upstream)
-      }
-
       json(res, 404, openAIError("not_found", `Ruta no soportada: ${req.method} ${url.pathname}`))
     } catch (error) {
       log(`ERROR ${error instanceof Error ? error.stack || error.message : String(error)}`)
@@ -211,9 +149,6 @@ export async function startServer() {
   log(`LISTEN http://${settings.host}:${settings.port}`)
   console.log(t("server.listening", settings.host, settings.port))
   commandCodeCatalogController.schedule(settings)
-  if (settings.openRouterApiKey) {
-    openRouterCatalogController.schedule(settings, commandCodeCatalogController.getCompatibilityMatrix())
-  }
   return server
 }
 

@@ -1,6 +1,6 @@
 # OpenCommandGo
 
-CLI shim to use Command Code Go subscription models and OpenRouter free models from OpenCode through a local OpenAI-compatible bridge.
+CLI shim to use Command Code Go subscription models from OpenCode through a local OpenAI-compatible bridge.
 
 **Binary:** `ocg`
 
@@ -10,7 +10,7 @@ CLI shim to use Command Code Go subscription models and OpenRouter free models f
 
 - Launches a local shim server on `127.0.0.1`
 - Synchronizes custom providers in OpenCode
-- Maintains dynamic catalogs for Command Code and OpenRouter Free
+- Maintains dynamic catalogs for Command Code
 - Protects the shim with an internal local token
 - Includes setup, diagnostics, catalog refresh, and runtime control commands
 - Includes watchdog auto-recovery, log inspection, and reset helpers
@@ -50,7 +50,6 @@ ocg refresh-models --full
 ocg refresh-models --parallel 6
 ocg refresh-models --full --parallel 2 --yes
 ocg set-api-key
-ocg set-openrouter-api-key
 ocg uninstall
 ```
 
@@ -61,7 +60,6 @@ ocg uninstall
 - `%APPDATA%\ocg\config.json`
 - `%APPDATA%\ocg\secrets.json`
 - `%APPDATA%\ocg\compatibility.commandcode.json`
-- `%APPDATA%\ocg\compatibility.openrouter.json`
 
 ### macOS
 
@@ -80,12 +78,10 @@ The setup/sync updates:
 Provider names:
 
 - `OCG CommandCode`
-- `OCG OpenRouter Free`
 
 Base URLs:
 
 - `http://127.0.0.1:4310/cmdshim/v1`
-- `http://127.0.0.1:4310/openrouter/v1`
 
 The shim writes an internal header so that OpenCode is the only valid client of the local provider.
 
@@ -112,7 +108,6 @@ The catalog is dynamically built at runtime. Each `ocg start` refreshes the cata
 During a refresh the CLI:
 
 - Queries `https://api.commandcode.ai/provider/v1/models`
-- Queries `https://openrouter.ai/api/v1/models` when `OPENROUTER_API_KEY` is configured
 - Filters compatible candidates
 - Tests compatibility conservatively
 - Avoids pruning the catalog due to transient quota or credit errors
@@ -129,7 +124,6 @@ Available modes:
 - `ocg refresh-models` — syncs the catalog without consuming credits
 - `ocg refresh-models --probe` — validates real availability (may consume credits)
 - `ocg refresh-models --full` — probes text, image, reasoning, and tools
-- `ocg refresh-models --provider openrouter` — only refreshes OpenRouter Free
 - `ocg refresh-models --provider commandcode` — only refreshes Command Code
 - `ocg refresh-models --parallel 6` — override the worker count
 - `ocg refresh-models --probe` and `--full` WILL spend Command Code Go credits/tokens
