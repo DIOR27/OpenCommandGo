@@ -4,6 +4,11 @@ import { getPaths, ensureParentDir } from "../config/paths.js"
 import { readSecrets } from "../config/store.js"
 import { deriveCatalogFromCompatibility, fallbackCatalog } from "../shared/catalog.js"
 import {
+  COMMANDCODE_PROVIDER,
+  resolveBridgeCapabilities,
+  resolveBridgeInputModalities,
+} from "../shared/models.js"
+import {
   commandCodeEffortLevelsForModel,
   commandCodeReasoningInterleavedField,
   supportsCommandCodeEffortSelection,
@@ -30,16 +35,10 @@ export function syncOpenCodeConfig({ host, port, providers = [], createIfMissing
   config.provider ||= {}
   for (const provider of providers) {
     if (!provider?.id || !provider?.compatibilityMatrix) continue
-    config.provider[provider.id] = {
-      npm: "@ai-sdk/openai-compatible",
-      name: provider.name,
-      options: {
-        baseURL: `http://${host}:${port}/${provider.routePrefix}/v1`,
-        headers: {
-          "x-ocg-token": secrets.shimAccessToken,
-        },
-      },
-      models: buildModelConfig(provider),
+    const syncedIds = resolveSyncedProviderIds(provider)
+    const providerConfig = buildProviderConfig({ host, port, provider, token: secrets.shimAccessToken })
+    for (const id of syncedIds) {
+      config.provider[id] = providerConfig
     }
   }
   writeFileSync(paths.opencodeConfigFile, JSON.stringify(config, null, 2), "utf8")
@@ -49,20 +48,42 @@ export function syncOpenCodeConfig({ host, port, providers = [], createIfMissing
 export function inspectOpenCodeProvider(providerId) {
   const paths = getPaths()
   const config = readJson(paths.opencodeConfigFile)
-  if (!config?.provider?.[providerId]) return null
-  return config.provider[providerId]
+  for (const candidate of resolveProviderLookupIds(providerId)) {
+    if (config?.provider?.[candidate]) return config.provider[candidate]
+  }
+  return null
 }
 
 export function removeOpenCodeProvider(providerId) {
   const paths = getPaths()
   const config = readJson(paths.opencodeConfigFile)
-  if (!config?.provider?.[providerId]) return false
-  delete config.provider[providerId]
-  if (config.model === `${providerId}/moonshotai/Kimi-K2.5` || String(config.model || "").startsWith(`${providerId}/`)) {
+  if (!config?.provider) return false
+  const providerIds = resolveProviderLookupIds(providerId)
+  const removed = providerIds.some(candidate => config?.provider?.[candidate])
+  if (!removed) return false
+  for (const candidate of providerIds) {
+    delete config.provider[candidate]
+  }
+  const currentModel = String(config.model || "")
+  if (providerIds.some(candidate => currentModel.startsWith(`${candidate}/`))) {
     delete config.model
   }
   writeFileSync(paths.opencodeConfigFile, JSON.stringify(config, null, 2), "utf8")
   return true
+}
+
+function buildProviderConfig({ host, port, provider, token }) {
+  return {
+    npm: "@ai-sdk/openai-compatible",
+    name: provider.kind === "commandcode" ? COMMANDCODE_PROVIDER.name : provider.name,
+    options: {
+      baseURL: `http://${host}:${port}/${provider.routePrefix}/v1`,
+      headers: {
+        "x-ocg-token": token,
+      },
+    },
+    models: buildModelConfig(provider),
+  }
 }
 
 function buildModelConfig(provider) {
@@ -75,7 +96,9 @@ function buildModelConfig(provider) {
   for (const { id, name, context_length } of catalog) {
     const compat = compatibilityMatrix?.models?.[id]
     if (compat?.status === "broken") continue
-    const supportedInputs = resolveSupportedInputs(compat)
+    const supportedInputs = provider.kind === "commandcode"
+      ? resolveBridgeInputModalities(compat)
+      : resolveSupportedInputs(compat)
     const contextWindow = resolveContextWindow(id, context_length)
     const supportsReasoning = resolveReasoningSupport(id, compat)
     const interleavedField = provider.kind === "commandcode" ? commandCodeReasoningInterleavedField(id) : null
@@ -89,24 +112,9 @@ function buildModelConfig(provider) {
         input: supportedInputs,
         output: ["text"],
       },
-      capabilities: {
-        vision: {
-          supported: supportedInputs.includes("image"),
-          source: resolveCapabilitySource(compat, "vision"),
-        },
-        pdf: {
-          supported: resolveCapabilitySupport(compat, "pdf"),
-          source: resolveCapabilitySource(compat, "pdf"),
-        },
-        audio: {
-          supported: resolveCapabilitySupport(compat, "audio"),
-          source: resolveCapabilitySource(compat, "audio"),
-        },
-        video: {
-          supported: resolveCapabilitySupport(compat, "video"),
-          source: resolveCapabilitySource(compat, "video"),
-        },
-      },
+      capabilities: provider.kind === "commandcode"
+        ? resolveBridgeCapabilities(compat)
+        : buildModelCapabilities(compat, supportedInputs),
       ...(supportsReasoning ? { reasoning: true } : {}),
       ...(interleavedField ? {
         interleaved: {
@@ -142,6 +150,43 @@ function resolveSupportedInputs(compat) {
     inputs.push("video")
   }
   return inputs
+}
+
+function buildModelCapabilities(compat, supportedInputs) {
+  return {
+    vision: {
+      supported: supportedInputs.includes("image"),
+      source: resolveCapabilitySource(compat, "vision"),
+    },
+    pdf: {
+      supported: resolveCapabilitySupport(compat, "pdf"),
+      source: resolveCapabilitySource(compat, "pdf"),
+    },
+    audio: {
+      supported: resolveCapabilitySupport(compat, "audio"),
+      source: resolveCapabilitySource(compat, "audio"),
+    },
+    video: {
+      supported: resolveCapabilitySupport(compat, "video"),
+      source: resolveCapabilitySource(compat, "video"),
+    },
+  }
+}
+
+function resolveSyncedProviderIds(provider) {
+  if (provider.kind !== "commandcode") return [provider.id]
+  return Array.from(new Set([
+    COMMANDCODE_PROVIDER.id,
+    ...COMMANDCODE_PROVIDER.legacyIds,
+    provider.id,
+  ].filter(Boolean)))
+}
+
+function resolveProviderLookupIds(providerId) {
+  if (!providerId || providerId === COMMANDCODE_PROVIDER.id || COMMANDCODE_PROVIDER.legacyIds.includes(providerId)) {
+    return [COMMANDCODE_PROVIDER.id, ...COMMANDCODE_PROVIDER.legacyIds]
+  }
+  return [providerId]
 }
 
 function supportsReasoningVariants(modelId, compat) {

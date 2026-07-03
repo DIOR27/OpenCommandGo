@@ -1,7 +1,7 @@
 import { createServer } from "node:http"
 import { getPaths, ensureDir } from "../config/paths.js"
 import { clearPid, getRuntimeSettings, readCompatibilityMatrix, writeCompatibilityMatrix, writePid } from "../config/store.js"
-import { MODEL_SET } from "../shared/models.js"
+import { COMMANDCODE_PROVIDER } from "../shared/models.js"
 import { t } from "../shared/i18n.js"
 import { buildOpenAICompletion, callCommandCodeAlpha, startCommandCodeAlphaStream, streamOpenAIResponse, summarizeIncomingMessages } from "./chat-bridge.js"
 import { createCatalogController } from "./catalog-runtime.js"
@@ -103,7 +103,19 @@ export async function startServer() {
         })
       }
 
-      if (req.method === "POST" && (url.pathname === "/v1/chat/completions" || url.pathname === "/ocg/v1/chat/completions")) {
+      if (req.method === "GET" && url.pathname === `/${COMMANDCODE_PROVIDER.routePrefix}/v1/models`) {
+        if (!requireShimAuth(req, res, settings)) return
+        return json(res, 200, {
+          object: "list",
+          data: commandCodeCatalogController.buildModelList(),
+        })
+      }
+
+      if (req.method === "POST" && (
+        url.pathname === "/v1/chat/completions"
+        || url.pathname === "/ocg/v1/chat/completions"
+        || url.pathname === `/${COMMANDCODE_PROVIDER.routePrefix}/v1/chat/completions`
+      )) {
         if (!requireShimAuth(req, res, settings)) return
         if (!settings.commandCodeApiKey) {
           return json(res, 500, openAIError("missing_api_key", t("error.missing_api_key")))
@@ -117,7 +129,7 @@ export async function startServer() {
 
         const model = typeof body.model === "string" ? body.model.trim() : ""
         const currentModelSet = new Set(commandCodeCatalogController.getAvailableCatalog().map(entry => entry.id))
-        if (!MODEL_SET.has(model) && !currentModelSet.has(model)) {
+        if (!currentModelSet.has(model)) {
           return json(res, 400, openAIError("model_not_allowed", `Modelo no permitido: ${model || "(vacío)"}`))
         }
 

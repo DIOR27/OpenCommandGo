@@ -9,7 +9,7 @@ CLI shim to use Command Code Go subscription models from OpenCode through a loca
 ## What it does
 
 - Launches a local shim server on `127.0.0.1`
-- Synchronizes custom providers in OpenCode
+- Synchronizes the `commandcode` provider automatically in OpenCode
 - Maintains dynamic catalogs for Command Code
 - Protects the shim with an internal local token
 - Includes setup, diagnostics, catalog refresh, and runtime control commands
@@ -75,15 +75,18 @@ The setup/sync updates:
 
 - `~/.config/opencode/opencode.json`
 
-Provider names:
+Provider IDs written by the shim:
 
-- `OCG CommandCode`
+- `commandcode` (canonical)
+- `ocg` (legacy compatibility alias)
 
 Base URLs:
 
-- `http://127.0.0.1:4310/cmdshim/v1`
+- `http://127.0.0.1:4310/commandcode/v1`
+- `http://127.0.0.1:4310/ocg/v1` (legacy alias)
 
 The shim writes an internal header so that OpenCode is the only valid client of the local provider.
+If `~/.config/opencode/opencode.json` does not exist yet, the first sync creates it automatically.
 
 ## Autostart
 
@@ -130,9 +133,17 @@ Available modes:
 
 OpenCode badges are driven by generated model metadata:
 
-- `modalities.input` controls text/image/audio/video/pdf visibility
+- `modalities.input` mirrors upstream per-model capability metadata first, with fallback registry hints only when upstream omits it
+- `capabilities.{vision,pdf,audio,video}` preserve the upstream/fallback source instead of forcing bridge-specific `unsupported` values
 - `reasoning: true` controls the "Allows reasoning" badge
 - `variants` only control explicit effort levels when a confirmed mapping exists
+
+Runtime forwarding behavior:
+
+- Text blocks are normalized to the Command Code bridge format
+- Image aliases such as `image_url` and data URLs are normalized into Command Code image blocks
+- Other structured content blocks are forwarded as-is so the bridge does not erase upstream modality data before transport
+- End-to-end PDF/audio/video execution still depends on Command Code accepting the original block shape sent by the caller; metadata stays truthful even when a given client payload format is not yet normalized by the shim
 
 Recommended:
 
@@ -163,8 +174,10 @@ Recommended:
 
 ## Current Limitations
 
+- OpenCommandGo is still an OpenAI-compatible shim, not a native OpenCode plugin package
 - Reasoning effort levels are only exposed when a confirmed mapping exists
-- Some multimodal badges may rely on curated hints when Command Code omits capability metadata from its catalog
+- Catalog capability hints may still rely on curated fallback metadata when Command Code omits them
+- The shim only normalizes text and image aliases itself; non-image structured media is passed through generically and may still require client/upstream shape alignment for full runtime success
 - Depends on upstream vendor endpoints which may change
 
 ## Local Development

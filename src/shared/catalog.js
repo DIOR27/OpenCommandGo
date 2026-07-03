@@ -1,4 +1,4 @@
-import { MODELS as FALLBACK_MODELS } from "./models.js"
+import { FALLBACK_MODEL_REGISTRY, resolveFallbackModelHints } from "./models.js"
 import { resolveContextWindow } from "./context-windows.js"
 
 export function isCommandCodeClaudeModel(model) {
@@ -34,10 +34,10 @@ export function extractModelRows(data) {
 }
 
 export function fallbackCatalog() {
-  return FALLBACK_MODELS.map(([id, name]) => ({
-    id,
-    name,
-    context_length: resolveContextWindow(id),
+  return FALLBACK_MODEL_REGISTRY.map(model => ({
+    id: model.id,
+    name: model.name,
+    context_length: resolveContextWindow(model.id),
     tags: [],
     catalog_capabilities: {
       vision: {
@@ -318,7 +318,7 @@ function inferCatalogReasoningCapability(raw) {
 }
 
 function applyKnownCapabilityHints(modelId, capabilities) {
-  const normalized = comparableCommandCodeModel(modelId)
+  const hints = resolveFallbackModelHints(modelId)
   const next = {
     vision: { ...(capabilities?.vision || { supported: null, source: null }) },
     pdf: { ...(capabilities?.pdf || { supported: null, source: null }) },
@@ -327,60 +327,19 @@ function applyKnownCapabilityHints(modelId, capabilities) {
     reasoning: { ...(capabilities?.reasoning || { supported: null, source: null }) },
   }
 
-  if (normalized === "moonshotai/kimi-k2-5" || normalized === "moonshotai/kimi-k2-6") {
-    if (next.vision.supported === null) {
-      next.vision = {
-        supported: true,
-        source: "hint.kimi.multimodal",
-      }
-    }
-    if (next.pdf.supported === null) {
-      next.pdf = {
-        supported: true,
-        source: "hint.kimi.files",
-      }
-    }
-    if (next.video.supported === null) {
-      next.video = {
-        supported: true,
-        source: "hint.kimi.video",
+  for (const key of ["vision", "pdf", "audio", "video"]) {
+    if (next[key].supported === null && typeof hints.capabilities[key] === "boolean") {
+      next[key] = {
+        supported: hints.capabilities[key],
+        source: `hint.${key}.fallback_registry`,
       }
     }
   }
 
-  if (
-    normalized === "xiaomi/mimo-v2-5"
-    || normalized === "xiaomi/mimo-v2-5-pro"
-  ) {
-    if (next.vision.supported === null) {
-      next.vision = {
-        supported: true,
-        source: "hint.mimo.native_multimodal",
-      }
-    }
-    if (next.pdf.supported === null) {
-      next.pdf = {
-        supported: true,
-        source: "hint.mimo.pdf",
-      }
-    }
-  }
-
-  if (
-    normalized === "moonshotai/kimi-k2-5"
-    || normalized === "moonshotai/kimi-k2-6"
-    || normalized === "xiaomi/mimo-v2-5"
-    || normalized === "xiaomi/mimo-v2-5-pro"
-    || normalized === "deepseek/deepseek-v4-pro"
-    || normalized === "deepseek/deepseek-v4-flash"
-    || normalized === "zai-org/glm-5"
-    || normalized === "zai-org/glm-5-1"
-  ) {
-    if (next.reasoning.supported === null) {
-      next.reasoning = {
-        supported: true,
-        source: "hint.reasoning.known_model",
-      }
+  if (next.reasoning.supported === null && typeof hints.reasoning === "boolean") {
+    next.reasoning = {
+      supported: hints.reasoning,
+      source: "hint.reasoning.fallback_registry",
     }
   }
 

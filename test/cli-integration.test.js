@@ -44,15 +44,23 @@ describe("ocg CLI integration", () => {
     assert.equal(health?.provider, "opencg-cli")
 
     const opencodeConfig = readJson(ctx.paths.opencodeConfigFile)
-    const provider = opencodeConfig?.provider?.ocg
+    const provider = opencodeConfig?.provider?.commandcode
     assert.ok(provider, "expected provider to be synced into OpenCode config")
-    assert.equal(provider.name, "OCG CommandCode")
-    assert.equal(provider.options?.baseURL, `http://127.0.0.1:${ctx.port}/ocg/v1`)
+    assert.ok(opencodeConfig?.provider?.ocg, "expected legacy provider alias to be kept")
+    assert.equal(provider.name, "Command Code")
+    assert.equal(provider.options?.baseURL, `http://127.0.0.1:${ctx.port}/commandcode/v1`)
     assert.equal(provider.options?.headers?.["x-ocg-token"], secrets.shimAccessToken)
     assert.deepStrictEqual(provider.models["xiaomi/MiMo-V2.5"]?.modalities?.input, ["text", "image", "pdf", "audio", "video"])
+    assert.equal(provider.models["xiaomi/MiMo-V2.5"]?.capabilities?.pdf?.supported, true)
     assert.equal(provider.models["xiaomi/MiMo-V2.5"]?.capabilities?.audio?.supported, true)
     assert.equal(provider.models["xiaomi/MiMo-V2.5"]?.capabilities?.video?.supported, true)
     assert.equal(provider.models["xiaomi/MiMo-V2.5"]?.reasoning, true)
+
+    const modelList = await getJson(`http://127.0.0.1:${ctx.port}/v1/models`, secrets.shimAccessToken)
+    assert.equal(modelList.status, 200)
+    assert.deepStrictEqual(modelList.json.data[0]?.modalities?.input, ["text", "image", "pdf", "audio", "video"])
+    assert.equal(modelList.json.data[0]?.capabilities?.pdf?.supported, true)
+    assert.equal(modelList.json.data[0]?.reasoning, true)
 
     const second = await runCli(["start", "--background"], ctx.env)
     assert.equal(second.code, 0, second.stderr)
@@ -361,6 +369,76 @@ describe("ocg chat/completions integration", () => {
         data: "QUJDRA==",
       },
     })
+  })
+
+  it("preserves structured non-image content blocks when forwarding upstream payloads", { timeout: 20000 }, async () => {
+    const mock = await startMockCommandCodeServer()
+    const ctx = createIsolatedCliContext(await getFreePort(), mock.port)
+    registerCleanup(ctx, mock)
+
+    await runCli(["start", "--background"], ctx.env)
+    const secrets = readJson(ctx.paths.secretsFile)
+    await waitForHealth(ctx.port, secrets.shimAccessToken)
+
+    mock.enqueueAlphaResponse({
+      status: 200,
+      body: sseText([
+        { type: "text-delta", text: "passthrough ok" },
+        { type: "finish", finishReason: "stop", totalUsage: { inputTokens: 8, outputTokens: 3 } },
+      ]),
+    })
+
+    const response = await postJson(`http://127.0.0.1:${ctx.port}/v1/chat/completions`, {
+      model: "xiaomi/MiMo-V2.5",
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "Inspect the attached media." },
+            {
+              type: "input_file",
+              mime_type: "application/pdf",
+              filename: "brief.pdf",
+              file_data: "JVBERi0xLjQ=",
+            },
+            {
+              type: "input_audio",
+              audio_url: "https://example.com/clip.wav",
+              mime_type: "audio/wav",
+            },
+            {
+              type: "input_video",
+              video_url: "https://example.com/demo.mp4",
+              mime_type: "video/mp4",
+            },
+          ],
+        },
+      ],
+    }, secrets.shimAccessToken)
+
+    assert.equal(response.status, 200)
+    assert.equal(response.json.choices[0].message.content, "passthrough ok")
+
+    const upstream = mock.takeAlphaRequests()
+    assert.deepStrictEqual(upstream[0].payload.params.messages[0].content, [
+      { type: "text", text: "Inspect the attached media." },
+      {
+        type: "input_file",
+        mime_type: "application/pdf",
+        filename: "brief.pdf",
+        file_data: "JVBERi0xLjQ=",
+      },
+      {
+        type: "input_audio",
+        audio_url: "https://example.com/clip.wav",
+        mime_type: "audio/wav",
+      },
+      {
+        type: "input_video",
+        video_url: "https://example.com/demo.mp4",
+        mime_type: "video/mp4",
+      },
+    ])
   })
 
   it("streams SSE chunks for text responses", { timeout: 20000 }, async () => {
@@ -770,6 +848,21 @@ async function killChildProcess(child) {
 
 function readJson(file) {
   return JSON.parse(readFileSync(file, "utf8"))
+}
+
+async function getJson(url, token) {
+  const response = await fetch(url, {
+    headers: {
+      "x-ocg-token": token,
+    },
+  })
+  const text = await response.text()
+  return {
+    status: response.status,
+    headers: response.headers,
+    text,
+    json: JSON.parse(text),
+  }
 }
 
 async function postJson(url, payload, token) {

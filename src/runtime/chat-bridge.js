@@ -598,6 +598,12 @@ function toCommandCodeContentBlocks(content) {
     const imageBlock = normalizeImageBlock(part)
     if (imageBlock) {
       blocks.push(imageBlock)
+      continue
+    }
+
+    const passthroughBlock = normalizePassThroughBlock(part)
+    if (passthroughBlock) {
+      blocks.push(passthroughBlock)
     }
   }
 
@@ -634,6 +640,15 @@ function normalizeImageBlock(part) {
   }
 
   return null
+}
+
+function normalizePassThroughBlock(part) {
+  if (!part || typeof part !== "object" || Array.isArray(part)) return null
+  if (typeof part.type !== "string" || !part.type.trim()) return null
+
+  const cloned = jsonClone(part)
+  if (!cloned || typeof cloned !== "object" || Array.isArray(cloned)) return null
+  return cloned
 }
 
 function imageSourceFromUrl(url) {
@@ -797,6 +812,14 @@ function jsonString(value) {
     return JSON.stringify(value ?? {})
   } catch {
     return "{}"
+  }
+}
+
+function jsonClone(value) {
+  try {
+    return JSON.parse(JSON.stringify(value))
+  } catch {
+    return null
   }
 }
 

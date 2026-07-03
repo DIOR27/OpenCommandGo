@@ -9,6 +9,7 @@ import { getPaths } from "../config/paths.js"
 import { detectOpenCodeInstallations, inspectOpenCodeProvider, removeOpenCodeProvider, syncOpenCodeConfig } from "../opencode/config.js"
 import { refreshModelCatalogNow, startServer } from "../runtime/server.js"
 import { getLocale, t } from "../shared/i18n.js"
+import { COMMANDCODE_PROVIDER } from "../shared/models.js"
 import { findPidByPort, gracefulKill, isProcessAlive, sleep } from "../shared/process-utils.js"
 
 export async function runCli(args) {
@@ -106,7 +107,7 @@ async function runSetup() {
       commandCodeApiKey: apiKey,
     })
 
-    if (detected.configFound) {
+    if (detected.configFound || detected.desktop || detected.cli) {
       const target = syncOpenCodeConfig({
         host: nextConfig.host,
         port: nextConfig.port,
@@ -114,12 +115,12 @@ async function runSetup() {
           {
             id: nextConfig.providerId,
             kind: "commandcode",
-            routePrefix: "ocg",
-            name: "OCG CommandCode",
+            routePrefix: COMMANDCODE_PROVIDER.routePrefix,
+            name: COMMANDCODE_PROVIDER.name,
             compatibilityMatrix: readCompatibilityMatrix("commandcode"),
           },
         ],
-        createIfMissing: false,
+        createIfMissing: true,
       })
       if (target) console.log(t("setup.synced", target))
     } else {

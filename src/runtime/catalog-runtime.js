@@ -1,7 +1,9 @@
 import { syncOpenCodeConfig } from "../opencode/config.js"
 import { deriveCatalogFromCompatibility, extractModelRows, fallbackCatalog, normalizeCatalogRows } from "../shared/catalog.js"
+import { supportsCommandCodeReasoning } from "../shared/commandcode-thinking.js"
 import { resolveContextWindow } from "../shared/context-windows.js"
 import { t } from "../shared/i18n.js"
+import { COMMANDCODE_PROVIDER, resolveBridgeCapabilities, resolveBridgeInputModalities } from "../shared/models.js"
 import { callCommandCodeAlpha, collectReasoning, collectText, collectToolCalls } from "./chat-bridge.js"
 
 const IMAGE_TEST_URL = "https://upload.wikimedia.org/wikipedia/commons/thumb/3/3a/Cat03.jpg/320px-Cat03.jpg"
@@ -25,11 +27,12 @@ export function createCatalogController({ initialCompatibilityMatrix, writeCompa
           {
             id: settings.providerId,
             kind: "commandcode",
-            routePrefix: "ocg",
-            name: "OCG CommandCode",
+            routePrefix: COMMANDCODE_PROVIDER.routePrefix,
+            name: COMMANDCODE_PROVIDER.name,
             compatibilityMatrix,
           },
         ],
+        createIfMissing: true,
       })
     },
     async refreshNow(settings, options = {}) {
@@ -108,11 +111,12 @@ export function createCatalogController({ initialCompatibilityMatrix, writeCompa
             {
               id: settings.providerId,
               kind: "commandcode",
-              routePrefix: "ocg",
-              name: "OCG CommandCode",
+              routePrefix: COMMANDCODE_PROVIDER.routePrefix,
+              name: COMMANDCODE_PROVIDER.name,
               compatibilityMatrix,
             },
           ],
+          createIfMissing: true,
         })
         log(`COMPAT refresh_done models=${Object.keys(next.models).length} mode=catalog`)
         return compatibilityMatrix
@@ -193,11 +197,12 @@ export function createCatalogController({ initialCompatibilityMatrix, writeCompa
           {
             id: settings.providerId,
             kind: "commandcode",
-            routePrefix: "ocg",
-            name: "OCG CommandCode",
+            routePrefix: COMMANDCODE_PROVIDER.routePrefix,
+            name: COMMANDCODE_PROVIDER.name,
             compatibilityMatrix,
           },
         ],
+        createIfMissing: true,
       })
       log(`COMPAT refresh_done models=${Object.keys(next.models).length}`)
       return compatibilityMatrix
@@ -239,7 +244,7 @@ function buildModelDescriptor(model, compat) {
     id: model.id,
     object: "model",
     created: 0,
-    owned_by: "ocg",
+    owned_by: COMMANDCODE_PROVIDER.id,
     name: model.name,
     context_length: contextWindow,
     limit: {
@@ -250,24 +255,10 @@ function buildModelDescriptor(model, compat) {
       input: inputModalities,
       output: ["text"],
     },
-    capabilities: {
-      vision: {
-        supported: inputModalities.includes("image"),
-        source: resolveVisionSource(compat),
-      },
-      pdf: {
-        supported: supportsPdfHint(compat),
-        source: resolvePdfSource(compat),
-      },
-      audio: {
-        supported: supportsGenericCapability(compat, "audio"),
-        source: resolveGenericCapabilitySource(compat, "audio"),
-      },
-      video: {
-        supported: supportsGenericCapability(compat, "video"),
-        source: resolveGenericCapabilitySource(compat, "video"),
-      },
-    },
+    capabilities: resolveBridgeCapabilities(compat),
+    ...(supportsCommandCodeReasoning(model.id, compat?.tags) || compat?.capabilities?.reasoning?.supported === true
+      ? { reasoning: true }
+      : {}),
     status: compat?.status || "unknown",
   }
 }
@@ -536,44 +527,5 @@ function isInsufficientCreditsMessage(text) {
 }
 
 function resolveInputModalities(compat) {
-  const input = ["text"]
-  if (supportsVisionInput(compat)) input.push("image")
-  if (supportsPdfHint(compat) === true) input.push("pdf")
-  if (supportsGenericCapability(compat, "audio") === true) input.push("audio")
-  if (supportsGenericCapability(compat, "video") === true) input.push("video")
-  return input
-}
-
-function supportsVisionInput(compat) {
-  if (!compat || typeof compat !== "object") return false
-  const vision = compat.capabilities?.vision
-  if (vision && typeof vision === "object" && typeof vision.supported === "boolean") {
-    return vision.supported
-  }
-  return compat?.image?.ok === true
-}
-
-function resolveVisionSource(compat) {
-  const source = compat?.capabilities?.vision?.source
-  return typeof source === "string" && source.trim() ? source.trim() : null
-}
-
-function supportsPdfHint(compat) {
-  const supported = compat?.capabilities?.pdf?.supported
-  return typeof supported === "boolean" ? supported : null
-}
-
-function resolvePdfSource(compat) {
-  const source = compat?.capabilities?.pdf?.source
-  return typeof source === "string" && source.trim() ? source.trim() : null
-}
-
-function supportsGenericCapability(compat, key) {
-  const supported = compat?.capabilities?.[key]?.supported
-  return typeof supported === "boolean" ? supported : null
-}
-
-function resolveGenericCapabilitySource(compat, key) {
-  const source = compat?.capabilities?.[key]?.source
-  return typeof source === "string" && source.trim() ? source.trim() : null
+  return resolveBridgeInputModalities(compat)
 }

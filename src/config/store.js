@@ -1,3 +1,4 @@
+import { COMMANDCODE_PROVIDER } from "../shared/models.js"
 import { existsSync, readFileSync, writeFileSync, unlinkSync } from "node:fs"
 import { randomBytes } from "node:crypto"
 import { getPaths, ensureDir, ensureParentDir } from "./paths.js"
@@ -5,7 +6,7 @@ import { getPaths, ensureDir, ensureParentDir } from "./paths.js"
 const DEFAULT_CONFIG = {
   host: "127.0.0.1",
   port: 4310,
-  providerId: "ocg",
+  providerId: COMMANDCODE_PROVIDER.id,
   commandCodeBaseUrl: "https://api.commandcode.ai",
   commandCodeVersion: "0.32.2",
   compatibilityRefreshHours: 6,
@@ -34,6 +35,7 @@ export function readConfig() {
     ...DEFAULT_CONFIG.autostart,
     ...(merged.autostart || {}),
   }
+  merged.providerId = normalizeProviderId(merged.providerId)
   return merged
 }
 
@@ -99,7 +101,7 @@ export function getRuntimeSettings() {
     commandCodeBaseUrl: String(firstNonEmpty(process.env.COMMANDCODE_BASE_URL, config.commandCodeBaseUrl) || DEFAULT_CONFIG.commandCodeBaseUrl).replace(/\/+$/, ""),
     commandCodeVersion: firstNonEmpty(process.env.COMMANDCODE_VERSION, process.env.COMMAND_CODE_CLI_VERSION, config.commandCodeVersion) || DEFAULT_CONFIG.commandCodeVersion,
     compatibilityRefreshHours: Number(config.compatibilityRefreshHours || DEFAULT_CONFIG.compatibilityRefreshHours),
-    providerId: config.providerId || DEFAULT_CONFIG.providerId,
+    providerId: normalizeProviderId(config.providerId || DEFAULT_CONFIG.providerId),
     allowRemoteHost: isEnabled(process.env.OCG_ALLOW_REMOTE) || isEnabled(process.env.COMMANDCODE_SHIM_ALLOW_REMOTE) || isEnabled(process.env.CC_GO_SHIM_ALLOW_REMOTE),
   }
 }
@@ -202,4 +204,12 @@ function mergeDeep(base, extra) {
     base[key] = value
   }
   return base
+}
+
+function normalizeProviderId(value) {
+  const normalized = String(value || "").trim()
+  if (!normalized || COMMANDCODE_PROVIDER.legacyIds.includes(normalized)) {
+    return COMMANDCODE_PROVIDER.id
+  }
+  return normalized
 }
