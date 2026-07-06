@@ -60,11 +60,11 @@ export function findPidByPort(port, { execFileSync: _exec, platform: _platform }
         }
       }
     } else {
-      // Unix: lsof -ti tcp:{port}
+      // Unix: lsof -ti tcp:{port} -sTCP:LISTEN (only the listening process)
       try {
         const result = exec(
           "lsof",
-          ["-ti", `tcp:${port}`],
+          ["-ti", `tcp:${port}`, "-sTCP:LISTEN"],
           { encoding: "utf8", timeout: 5000, stdio: ["ignore", "pipe", "ignore"] },
         )
         const pid = Number(String(result || "").trim())
