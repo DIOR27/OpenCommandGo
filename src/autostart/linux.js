@@ -85,18 +85,29 @@ function hasSystemdUser() {
 }
 
 function buildSystemdUnit(registration) {
+  const envFile = registration.linux?.environmentFile || ""
+  const envSection = envFile ? `EnvironmentFile=${envFile}\n` : ""
+  const executable = registration.executable || resolveExecutableFromCommand(registration.command)
+  // systemd expects a foreground process, not a detached background launch
+  const serveCommand = `"${executable}" serve`
   return `[Unit]
 Description=OCG CommandCode
 
 [Service]
 Type=simple
-ExecStart=${registration.command}
+${envSection}ExecStart=${serveCommand}
 Restart=on-failure
 RestartSec=5
+Environment=COMMANDCODE_SHIM_SERVE=1
 
 [Install]
 WantedBy=default.target
 `
+}
+
+function resolveExecutableFromCommand(command) {
+  const cleaned = String(command || "").replace(/^"|"$/g, "").trim()
+  return cleaned.split(/\s+/)[0] || "ocg"
 }
 
 function buildDesktopFile(registration) {

@@ -3,6 +3,7 @@ import { execFileSync } from "node:child_process"
 import { homedir } from "node:os"
 import { join } from "node:path"
 import { readConfig, writeConfig } from "../config/store.js"
+import { getShimDataDir } from "../config/paths.js"
 import { disableLinuxAutostart, enableLinuxAutostart, getLinuxAutostartStatus } from "./linux.js"
 import { disableMacAutostart, enableMacAutostart, getMacAutostartStatus } from "./macos.js"
 import { disableWindowsAutostart, enableWindowsAutostart, getWindowsAutostartStatus } from "./windows.js"
@@ -73,6 +74,7 @@ export function resolveRegistration() {
   const launcher = resolveLauncher()
   return {
     appLabel: APP_LABEL,
+    executable: launcher.executable,
     command: launcher.command,
     commandArgs: launcher.argv,
     taskExecute: launcher.taskExecute || null,
@@ -97,6 +99,7 @@ export function resolveRegistration() {
       systemdUnit: LINUX_SYSTEMD_UNIT,
       systemdFile: join(homedir(), ".config", "systemd", "user", LINUX_SYSTEMD_UNIT),
       desktopFile: join(resolveXdgConfigHome(), "autostart", LINUX_DESKTOP_FILE),
+      environmentFile: join(getShimDataDir(), "secrets.env"),
     },
   }
 }
