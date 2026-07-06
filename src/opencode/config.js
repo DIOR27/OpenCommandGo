@@ -15,6 +15,7 @@ import {
   supportsCommandCodeReasoning,
 } from "../shared/commandcode-thinking.js"
 import { resolveContextWindow } from "../shared/context-windows.js"
+import { mergeCrossProviderCapabilities, readOpenCodeConfigFor } from "./cross-provider-capabilities.js"
 
 export function detectOpenCodeInstallations() {
   const paths = getPaths()
@@ -32,11 +33,19 @@ export function syncOpenCodeConfig({ host, port, providers = [], createIfMissing
   if (!existsSync(paths.opencodeConfigFile) && !createIfMissing) return null
   ensureParentDir(paths.opencodeConfigFile)
   const config = readJson(paths.opencodeConfigFile) || { $schema: "https://opencode.ai/config.json" }
+  const existingConfig = readOpenCodeConfigFor(paths)
   config.provider ||= {}
   for (const provider of providers) {
     if (!provider?.id || !provider?.compatibilityMatrix) continue
     const syncedIds = resolveSyncedProviderIds(provider)
     const providerConfig = buildProviderConfig({ host, port, provider, token: secrets.shimAccessToken })
+    if (provider.kind === "commandcode") {
+      mergeCrossProviderCapabilities({
+        commandcodeModels: providerConfig.models,
+        existingProviders: existingConfig?.provider || {},
+        excludeIds: ["commandcode", "ocg", provider.id],
+      })
+    }
     for (const id of syncedIds) {
       config.provider[id] = providerConfig
     }

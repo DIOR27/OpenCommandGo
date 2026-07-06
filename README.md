@@ -88,6 +88,12 @@ Base URLs:
 The shim writes an internal header so that OpenCode is the only valid client of the local provider.
 If `~/.config/opencode/opencode.json` does not exist yet, the first sync creates it automatically.
 
+### Cross-provider capability merge
+
+When `syncOpenCodeConfig` writes the `commandcode` / `ocg` provider entry, it also inspects the existing `provider` map already stored in `~/.config/opencode/opencode.json`.
+If a Command Code model matches another configured provider model by normalized full id or providerless id, missing Command Code capability hints are enriched from the richest matching provider.
+Injected provenance is tagged as `cross-provider:<providerId>` on the copied capability source fields.
+
 ## Autostart
 
 Register the shim to launch automatically in your user session:
