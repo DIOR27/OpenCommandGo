@@ -15,7 +15,12 @@ import {
   supportsCommandCodeReasoning,
 } from "../shared/commandcode-thinking.js"
 import { resolveContextWindow } from "../shared/context-windows.js"
-import { mergeCrossProviderCapabilities, readOpenCodeConfigFor } from "./cross-provider-capabilities.js"
+import {
+  buildComparableProviderModels,
+  mergeCrossProviderCapabilities,
+  readOpenCodeConfigFor,
+} from "./cross-provider-capabilities.js"
+import { readResolvedProvidersFromSidecar } from "./sidecar-resolved-providers.js"
 
 export function detectOpenCodeInstallations() {
   const paths = getPaths()
@@ -27,13 +32,21 @@ export function detectOpenCodeInstallations() {
   }
 }
 
-export function syncOpenCodeConfig({ host, port, providers = [], createIfMissing = false }) {
+export async function syncOpenCodeConfig({
+  host,
+  port,
+  providers = [],
+  createIfMissing = false,
+  resolvedProviderMetadata = null,
+  readResolvedProviders = readResolvedProvidersFromSidecar,
+} = {}) {
   const paths = getPaths()
   const secrets = readSecrets()
   if (!existsSync(paths.opencodeConfigFile) && !createIfMissing) return null
   ensureParentDir(paths.opencodeConfigFile)
   const config = readJson(paths.opencodeConfigFile) || { $schema: "https://opencode.ai/config.json" }
   const existingConfig = readOpenCodeConfigFor(paths)
+  const runtimeProviders = await readComparableRuntimeProviders({ resolvedProviderMetadata, readResolvedProviders })
   config.provider ||= {}
   for (const provider of providers) {
     if (!provider?.id || !provider?.compatibilityMatrix) continue
@@ -42,8 +55,11 @@ export function syncOpenCodeConfig({ host, port, providers = [], createIfMissing
     if (provider.kind === "commandcode") {
       mergeCrossProviderCapabilities({
         commandcodeModels: providerConfig.models,
-        existingProviders: existingConfig?.provider || {},
-        excludeIds: ["commandcode", "ocg", provider.id],
+        providerSources: buildCrossProviderSources({
+          runtimeProviders,
+          existingProviders: existingConfig?.provider || {},
+          excludeIds: ["commandcode", "ocg", provider.id],
+        }),
       })
     }
     for (const id of syncedIds) {
@@ -92,6 +108,33 @@ function buildProviderConfig({ host, port, provider, token }) {
       },
     },
     models: buildModelConfig(provider),
+  }
+}
+
+function buildCrossProviderSources({ runtimeProviders, existingProviders, excludeIds }) {
+  const sources = []
+  const comparableRuntimeProviders = buildComparableProviderModels(runtimeProviders, excludeIds)
+  if (Object.keys(comparableRuntimeProviders).length > 0) {
+    sources.push({ rank: 0, tagPrefix: "cross-provider-sidecar", providers: comparableRuntimeProviders })
+  }
+  const comparableConfigProviders = buildComparableProviderModels(existingProviders, excludeIds)
+  if (Object.keys(comparableConfigProviders).length > 0) {
+    sources.push({ rank: 1, tagPrefix: "cross-provider-config", providers: comparableConfigProviders })
+  }
+  return sources
+}
+
+async function readComparableRuntimeProviders({ resolvedProviderMetadata, readResolvedProviders }) {
+  if (resolvedProviderMetadata && typeof resolvedProviderMetadata === "object") {
+    return resolvedProviderMetadata
+  }
+  if (typeof readResolvedProviders !== "function") return {}
+  try {
+    const result = await readResolvedProviders()
+    if (!result?.ok || !result.providers || typeof result.providers !== "object") return {}
+    return result.providers
+  } catch {
+    return {}
   }
 }
 

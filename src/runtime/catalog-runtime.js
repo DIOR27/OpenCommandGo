@@ -19,8 +19,8 @@ export function createCatalogController({ initialCompatibilityMatrix, writeCompa
     getCompatibilityMatrix: () => compatibilityMatrix,
     getAvailableCatalog: () => availableCatalog,
     buildModelList: () => availableCatalog.map(model => buildModelDescriptor(model, compatibilityMatrix?.models?.[model.id])),
-    syncProviderConfig(settings) {
-      syncOpenCodeConfig({
+    async syncProviderConfig(settings) {
+      await syncOpenCodeConfig({
         host: settings.host,
         port: settings.port,
         providers: [
@@ -104,7 +104,7 @@ export function createCatalogController({ initialCompatibilityMatrix, writeCompa
         compatibilityMatrix = next
         availableCatalog = deriveCatalogFromCompatibility(compatibilityMatrix)
         writeCompatibilityMatrix(compatibilityMatrix)
-        syncOpenCodeConfig({
+        await syncOpenCodeConfig({
           host: settings.host,
           port: settings.port,
           providers: [
@@ -190,7 +190,7 @@ export function createCatalogController({ initialCompatibilityMatrix, writeCompa
       compatibilityMatrix = next
       availableCatalog = deriveCatalogFromCompatibility(compatibilityMatrix)
       writeCompatibilityMatrix(compatibilityMatrix)
-      syncOpenCodeConfig({
+      await syncOpenCodeConfig({
         host: settings.host,
         port: settings.port,
         providers: [

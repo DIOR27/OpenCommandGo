@@ -91,8 +91,21 @@ If `~/.config/opencode/opencode.json` does not exist yet, the first sync creates
 ### Cross-provider capability merge
 
 When `syncOpenCodeConfig` writes the `commandcode` / `ocg` provider entry, it also inspects the existing `provider` map already stored in `~/.config/opencode/opencode.json`.
-If a Command Code model matches another configured provider model by normalized full id or providerless id, missing Command Code capability hints are enriched from the richest matching provider.
-Injected provenance is tagged as `cross-provider:<providerId>` on the copied capability source fields.
+It now also attempts a best-effort read from the running OpenCode Desktop sidecar, using the Desktop runtime's resolved provider/model metadata first and falling back to the file-based config metadata when the sidecar is unavailable or unauthorized.
+If a Command Code model matches another configured provider model by normalized full id or providerless id, missing Command Code capability hints are enriched from the best match.
+Injected provenance is tagged as `cross-provider-sidecar:<providerId>` for Desktop runtime data or `cross-provider-config:<providerId>` for file-config fallback data.
+
+Sidecar discovery details:
+
+- Reads the newest Desktop `main.log` under `~/.config/ai.opencode.desktop/logs/**/main.log`
+- Extracts the current ephemeral localhost sidecar URL from `server ready { url: ... }`
+- Tries `/provider` first, then `/config/providers`
+- Uses optional local auth overrides when present:
+  - `OPENCODE_SIDECAR_AUTHORIZATION`
+  - `OPENCODE_SIDECAR_BASIC_TOKEN`
+  - `OPENCODE_SIDECAR_USERNAME` + `OPENCODE_SIDECAR_PASSWORD`
+
+If auth cannot be discovered, the shim fails closed and keeps the existing config-only merge path.
 
 ## Autostart
 

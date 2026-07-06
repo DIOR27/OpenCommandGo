@@ -108,7 +108,7 @@ async function runSetup() {
     })
 
     if (detected.configFound || detected.desktop || detected.cli) {
-      const target = syncOpenCodeConfig({
+      const target = await syncOpenCodeConfig({
         host: nextConfig.host,
         port: nextConfig.port,
         providers: [

@@ -4,26 +4,29 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { inspectOpenCodeProvider, removeOpenCodeProvider, syncOpenCodeConfig } from "../src/opencode/config.js"
+import { extractLatestSidecarUrl, normalizeResolvedProviders, resolveSidecarAuthCandidates } from "../src/opencode/sidecar-resolved-providers.js"
 
 const ORIGINAL_ENV = {
   OCG_HOME: process.env.OCG_HOME,
   USERPROFILE: process.env.USERPROFILE,
+  OPENCODE_SIDECAR_AUTHORIZATION: process.env.OPENCODE_SIDECAR_AUTHORIZATION,
 }
 
 afterEach(() => {
   restoreEnv("OCG_HOME", ORIGINAL_ENV.OCG_HOME)
   restoreEnv("USERPROFILE", ORIGINAL_ENV.USERPROFILE)
+  restoreEnv("OPENCODE_SIDECAR_AUTHORIZATION", ORIGINAL_ENV.OPENCODE_SIDECAR_AUTHORIZATION)
 })
 
 describe("syncOpenCodeConfig", () => {
-  it("registers commandcode automatically, keeps the legacy alias, and mirrors upstream model metadata", () => {
+  it("registers commandcode automatically, keeps the legacy alias, and mirrors upstream model metadata", async () => {
     const root = mkdtempSync(join(tmpdir(), "ocg-opencode-config-"))
     const userProfile = join(root, "user")
     process.env.OCG_HOME = root
     process.env.USERPROFILE = userProfile
 
     try {
-      const file = syncOpenCodeConfig({
+      const file = await syncOpenCodeConfig({
         host: "127.0.0.1",
         port: 4310,
         createIfMissing: true,
@@ -71,14 +74,14 @@ describe("syncOpenCodeConfig", () => {
     }
   })
 
-  it("removes both commandcode and ocg aliases", () => {
+  it("removes both commandcode and ocg aliases", async () => {
     const root = mkdtempSync(join(tmpdir(), "ocg-opencode-remove-"))
     const userProfile = join(root, "user")
     process.env.OCG_HOME = root
     process.env.USERPROFILE = userProfile
 
     try {
-      const file = syncOpenCodeConfig({
+      const file = await syncOpenCodeConfig({
         host: "127.0.0.1",
         port: 4310,
         createIfMissing: true,
@@ -108,9 +111,9 @@ describe("syncOpenCodeConfig", () => {
     }
   })
 
-  it("inherits video and reasoning from a matching configured provider", () => {
-    withOpenCodeFixture(root => {
-      const file = seedExistingConfig(root, {
+  it("inherits video and reasoning from a matching configured provider", async () => {
+    await withOpenCodeFixture(async root => {
+      const file = await seedExistingConfig(root, {
         provider: {
           nvidia: {
             models: {
@@ -127,31 +130,33 @@ describe("syncOpenCodeConfig", () => {
         },
       })
 
-      syncCommandCode(file, {
-        "MiniMaxAI/MiniMax-M3": {
-          name: "MiniMax M3",
-          status: "ok",
-          capabilities: {
-            vision: { supported: null, source: null },
-            pdf: { supported: null, source: null },
-            audio: { supported: null, source: null },
-            video: { supported: null, source: null },
+      await syncCommandCode({
+        models: {
+          "MiniMaxAI/MiniMax-M3": {
+            name: "MiniMax M3",
+            status: "ok",
+            capabilities: {
+              vision: { supported: null, source: null },
+              pdf: { supported: null, source: null },
+              audio: { supported: null, source: null },
+              video: { supported: null, source: null },
+            },
+            context_length: null,
           },
-          context_length: null,
         },
       })
 
       const model = readProvider(file).models["MiniMaxAI/MiniMax-M3"]
       assert.deepStrictEqual(model.modalities.input, ["text", "video"])
       assert.equal(model.capabilities.video.supported, true)
-      assert.equal(model.capabilities.video.source, "cross-provider:nvidia")
+      assert.equal(model.capabilities.video.source, "cross-provider-config:nvidia")
       assert.equal(model.reasoning, true)
     })
   })
 
-  it("does not override an upstream false capability with cross-provider true", () => {
-    withOpenCodeFixture(root => {
-      const file = seedExistingConfig(root, {
+  it("does not override an upstream false capability with cross-provider true", async () => {
+    await withOpenCodeFixture(async root => {
+      const file = await seedExistingConfig(root, {
         provider: {
           nvidia: {
             models: {
@@ -167,15 +172,17 @@ describe("syncOpenCodeConfig", () => {
         },
       })
 
-      syncCommandCode(file, {
-        "MiniMaxAI/MiniMax-M3": {
-          name: "MiniMax M3",
-          status: "ok",
-          capabilities: {
-            vision: { supported: null, source: null },
-            pdf: { supported: null, source: null },
-            audio: { supported: null, source: null },
-            video: { supported: false, source: "catalog.capabilities.video" },
+      await syncCommandCode({
+        models: {
+          "MiniMaxAI/MiniMax-M3": {
+            name: "MiniMax M3",
+            status: "ok",
+            capabilities: {
+              vision: { supported: null, source: null },
+              pdf: { supported: null, source: null },
+              audio: { supported: null, source: null },
+              video: { supported: false, source: "catalog.capabilities.video" },
+            },
           },
         },
       })
@@ -187,9 +194,9 @@ describe("syncOpenCodeConfig", () => {
     })
   })
 
-  it("prefers the richest provider when matching capabilities conflict", () => {
-    withOpenCodeFixture(root => {
-      const file = seedExistingConfig(root, {
+  it("prefers the richest provider when matching capabilities conflict", async () => {
+    await withOpenCodeFixture(async root => {
+      const file = await seedExistingConfig(root, {
         provider: {
           groq: {
             models: {
@@ -217,15 +224,17 @@ describe("syncOpenCodeConfig", () => {
         },
       })
 
-      syncCommandCode(file, {
-        "acme/doc-master": {
-          name: "Doc Master",
-          status: "ok",
-          capabilities: {
-            vision: { supported: null, source: null },
-            pdf: { supported: null, source: null },
-            audio: { supported: null, source: null },
-            video: { supported: null, source: null },
+      await syncCommandCode({
+        models: {
+          "acme/doc-master": {
+            name: "Doc Master",
+            status: "ok",
+            capabilities: {
+              vision: { supported: null, source: null },
+              pdf: { supported: null, source: null },
+              audio: { supported: null, source: null },
+              video: { supported: null, source: null },
+            },
           },
         },
       })
@@ -233,25 +242,27 @@ describe("syncOpenCodeConfig", () => {
       const model = readProvider(file).models["acme/doc-master"]
       assert.deepStrictEqual(model.modalities.input, ["text", "image", "pdf"])
       assert.equal(model.capabilities.pdf.supported, true)
-      assert.equal(model.capabilities.pdf.source, "cross-provider:nvidia")
+      assert.equal(model.capabilities.pdf.source, "cross-provider-config:nvidia")
       assert.equal(model.capabilities.audio.supported, true)
       assert.equal(model.reasoning, true)
     })
   })
 
-  it("leaves commandcode models unchanged when no other providers are configured", () => {
-    withOpenCodeFixture(root => {
-      const file = seedExistingConfig(root)
+  it("leaves commandcode models unchanged when no other providers are configured", async () => {
+    await withOpenCodeFixture(async root => {
+      const file = await seedExistingConfig(root)
 
-      syncCommandCode(file, {
-        "acme/plain-text-only": {
-          name: "Plain Text Only",
-          status: "ok",
-          capabilities: {
-            vision: { supported: null, source: null },
-            pdf: { supported: null, source: null },
-            audio: { supported: null, source: null },
-            video: { supported: null, source: null },
+      await syncCommandCode({
+        models: {
+          "acme/plain-text-only": {
+            name: "Plain Text Only",
+            status: "ok",
+            capabilities: {
+              vision: { supported: null, source: null },
+              pdf: { supported: null, source: null },
+              audio: { supported: null, source: null },
+              video: { supported: null, source: null },
+            },
           },
         },
       })
@@ -263,9 +274,9 @@ describe("syncOpenCodeConfig", () => {
     })
   })
 
-  it("matches providerless ids and transfers vision support", () => {
-    withOpenCodeFixture(root => {
-      const file = seedExistingConfig(root, {
+  it("matches providerless ids and transfers vision support", async () => {
+    await withOpenCodeFixture(async root => {
+      const file = await seedExistingConfig(root, {
         provider: {
           nvidia: {
             models: {
@@ -280,15 +291,17 @@ describe("syncOpenCodeConfig", () => {
         },
       })
 
-      syncCommandCode(file, {
-        "Llama-3.1-8B-Instruct": {
-          name: "Llama 3.1 8B Instruct",
-          status: "ok",
-          capabilities: {
-            vision: { supported: null, source: null },
-            pdf: { supported: null, source: null },
-            audio: { supported: null, source: null },
-            video: { supported: null, source: null },
+      await syncCommandCode({
+        models: {
+          "Llama-3.1-8B-Instruct": {
+            name: "Llama 3.1 8B Instruct",
+            status: "ok",
+            capabilities: {
+              vision: { supported: null, source: null },
+              pdf: { supported: null, source: null },
+              audio: { supported: null, source: null },
+              video: { supported: null, source: null },
+            },
           },
         },
       })
@@ -296,37 +309,218 @@ describe("syncOpenCodeConfig", () => {
       const model = readProvider(file).models["Llama-3.1-8B-Instruct"]
       assert.deepStrictEqual(model.modalities.input, ["text", "image"])
       assert.equal(model.capabilities.vision.supported, true)
-      assert.equal(model.capabilities.vision.source, "cross-provider:nvidia")
+      assert.equal(model.capabilities.vision.source, "cross-provider-config:nvidia")
+    })
+  })
+
+  it("prefers sidecar-resolved metadata over file-config metadata when both match", async () => {
+    await withOpenCodeFixture(async root => {
+      const file = await seedExistingConfig(root, {
+        provider: {
+          openrouter: {
+            models: {
+              "acme/omni": {
+                modalities: { input: ["text", "pdf"], output: ["text"] },
+                capabilities: {
+                  pdf: { supported: true, source: "config.pdf" },
+                },
+                limit: { context: 64000 },
+              },
+            },
+          },
+        },
+      })
+
+      await syncCommandCode({
+        models: {
+          "acme/omni": {
+            name: "Omni",
+            status: "ok",
+            context_length: null,
+            capabilities: {
+              vision: { supported: null, source: null },
+              pdf: { supported: null, source: null },
+              audio: { supported: null, source: null },
+              video: { supported: null, source: null },
+            },
+          },
+        },
+        resolvedProviderMetadata: {
+          openrouter: {
+            models: {
+              "acme/omni": {
+                modalities: { input: ["text", "pdf", "audio"], output: ["text"] },
+                capabilities: {
+                  pdf: { supported: true, source: "sidecar.pdf" },
+                  audio: { supported: true, source: "sidecar.audio" },
+                },
+                limit: { context: 128000 },
+              },
+            },
+          },
+        },
+      })
+
+      const model = readProvider(file).models["acme/omni"]
+      assert.deepStrictEqual(model.modalities.input, ["text", "pdf", "audio"])
+      assert.equal(model.capabilities.pdf.source, "cross-provider-sidecar:openrouter")
+      assert.equal(model.capabilities.audio.source, "cross-provider-sidecar:openrouter")
+      assert.equal(model.limit.context, 200000)
+    })
+  })
+
+  it("gracefully falls back to file-config metadata when sidecar auth fails", async () => {
+    await withOpenCodeFixture(async root => {
+      const file = await seedExistingConfig(root, {
+        provider: {
+          hyperbolic: {
+            models: {
+              "vendor/media-pro": {
+                modalities: { input: ["text", "video"], output: ["text"] },
+                capabilities: {
+                  video: { supported: true, source: "config.video" },
+                },
+              },
+            },
+          },
+        },
+      })
+
+      await syncCommandCode({
+        models: {
+          "vendor/media-pro": {
+            name: "Media Pro",
+            status: "ok",
+            capabilities: {
+              vision: { supported: null, source: null },
+              pdf: { supported: null, source: null },
+              audio: { supported: null, source: null },
+              video: { supported: null, source: null },
+            },
+          },
+        },
+        readResolvedProviders: async () => ({ ok: false, code: "unauthorized", providers: {} }),
+      })
+
+      const model = readProvider(file).models["vendor/media-pro"]
+      assert.equal(model.capabilities.video.supported, true)
+      assert.equal(model.capabilities.video.source, "cross-provider-config:hyperbolic")
+    })
+  })
+
+  it("does not overwrite explicit commandcode values with sidecar metadata", async () => {
+    await withOpenCodeFixture(async () => {
+      const file = await seedExistingConfig()
+
+      await syncCommandCode({
+        models: {
+          "vendor/deep-thinker": {
+            name: "Deep Thinker",
+            status: "ok",
+            context_length: 4096,
+            tags: [],
+            capabilities: {
+              vision: { supported: true, source: "catalog.capabilities.vision" },
+              pdf: { supported: null, source: null },
+              audio: { supported: null, source: null },
+              video: { supported: false, source: "catalog.capabilities.video" },
+            },
+          },
+        },
+        resolvedProviderMetadata: {
+          together: {
+            models: {
+              "vendor/deep-thinker": {
+                modalities: { input: ["text", "image", "video"], output: ["text"] },
+                capabilities: {
+                  vision: { supported: true, source: "sidecar.vision" },
+                  video: { supported: true, source: "sidecar.video" },
+                },
+                reasoning: true,
+                limit: { context: 999999 },
+              },
+            },
+          },
+        },
+      })
+
+      const model = readProvider(file).models["vendor/deep-thinker"]
+      assert.equal(model.capabilities.video.supported, false)
+      assert.equal(model.capabilities.video.source, "catalog.capabilities.video")
+      assert.equal(model.capabilities.vision.source, "catalog.capabilities.vision")
+      assert.equal(model.limit.context, 4096)
+      assert.deepStrictEqual(model.modalities.input, ["text", "image"])
     })
   })
 })
 
-function withOpenCodeFixture(callback) {
+describe("sidecar resolved provider helpers", () => {
+  it("extracts the latest sidecar url from desktop logs", () => {
+    assert.equal(
+      extractLatestSidecarUrl("before\nserver ready { url: 'http://127.0.0.1:33333' }\nafter\nserver ready { url: 'http://127.0.0.1:44444' }"),
+      "http://127.0.0.1:44444",
+    )
+  })
+
+  it("normalizes resolved provider payloads generically", () => {
+    const providers = normalizeResolvedProviders({
+      providers: [
+        {
+          providerID: "openrouter",
+          models: [
+            {
+              modelId: "meta-llama/llama-4-maverick",
+              modalities: { input: ["text", "image"], output: ["text"] },
+              capabilities: { vision: { supported: true, source: "runtime" } },
+              contextWindow: 12345,
+              reasoning: true,
+            },
+          ],
+        },
+      ],
+    })
+
+    assert.equal(providers.openrouter.models["meta-llama/llama-4-maverick"].limit.context, 12345)
+    assert.equal(providers.openrouter.models["meta-llama/llama-4-maverick"].capabilities.vision.supported, true)
+    assert.equal(providers.openrouter.models["meta-llama/llama-4-maverick"].reasoning, true)
+  })
+
+  it("builds auth candidates from env overrides plus anonymous fallback", () => {
+    process.env.OPENCODE_SIDECAR_AUTHORIZATION = "Basic abc123"
+    assert.deepStrictEqual(resolveSidecarAuthCandidates(), [
+      { kind: "authorization", authorization: "Basic abc123" },
+      { kind: "none" },
+    ])
+  })
+})
+
+async function withOpenCodeFixture(callback) {
   const root = mkdtempSync(join(tmpdir(), "ocg-opencode-config-"))
   const userProfile = join(root, "user")
   process.env.OCG_HOME = root
   process.env.USERPROFILE = userProfile
   try {
-    callback(root)
+    await callback(root)
   } finally {
     rmSync(root, { recursive: true, force: true })
   }
 }
 
-function seedExistingConfig(root, partial = {}) {
-  const file = syncOpenCodeConfig({
+async function seedExistingConfig(_root, partial = {}) {
+  const file = await syncOpenCodeConfig({
     host: "127.0.0.1",
     port: 4310,
     createIfMissing: true,
     providers: [],
+    readResolvedProviders: async () => ({ ok: false, code: "test-noop", providers: {} }),
   })
   const base = JSON.parse(readFileSync(file, "utf8"))
   writeFileSync(file, JSON.stringify({ ...base, ...partial }, null, 2), "utf8")
   return file
 }
 
-function syncCommandCode(_file, models) {
-  syncOpenCodeConfig({
+async function syncCommandCode({ models, resolvedProviderMetadata, readResolvedProviders } = {}) {
+  await syncOpenCodeConfig({
     host: "127.0.0.1",
     port: 4310,
     createIfMissing: true,
@@ -339,6 +533,8 @@ function syncCommandCode(_file, models) {
         compatibilityMatrix: { models },
       },
     ],
+    ...(resolvedProviderMetadata ? { resolvedProviderMetadata } : {}),
+    readResolvedProviders: readResolvedProviders || (async () => ({ ok: false, code: "test-noop", providers: {} })),
   })
 }
 

@@ -27,10 +27,21 @@ export function readOpenCodeConfigFor(paths) {
   }
 }
 
-export function rankMatchCandidates(commandcodeModelId, otherProvidersModels) {
+export function buildComparableProviderModels(existingProviders, excludeIds) {
+  const excluded = new Set((excludeIds || []).filter(Boolean))
+  return Object.fromEntries(
+    Object.entries(existingProviders || {})
+      .filter(([providerId, providerConfig]) => !excluded.has(providerId) && providerConfig?.models && typeof providerConfig.models === "object")
+      .map(([providerId, providerConfig]) => [providerId, providerConfig.models]),
+  )
+}
+
+export function rankMatchCandidates(commandcodeModelId, otherProvidersModels, options = {}) {
   const exactComparable = comparableModelId(commandcodeModelId)
   const commandcodeProviderless = providerlessModelId(commandcodeModelId)
   const matches = []
+  const sourceRank = Number.isInteger(options.sourceRank) ? options.sourceRank : 0
+  const sourceTag = typeof options.sourceTag === "string" && options.sourceTag.trim() ? options.sourceTag.trim() : "cross-provider"
   for (const [providerId, models] of Object.entries(otherProvidersModels || {})) {
     if (!models || typeof models !== "object") continue
     for (const [modelId, modelEntry] of Object.entries(models)) {
@@ -42,11 +53,12 @@ export function rankMatchCandidates(commandcodeModelId, otherProvidersModels) {
           ? 80
           : 0
       if (!score) continue
-      matches.push({ providerId, modelEntry, score })
+      matches.push({ providerId, modelEntry, score, sourceRank, sourceTag })
     }
   }
   return matches.sort((left, right) => (
     right.score - left.score
+    || left.sourceRank - right.sourceRank
     || scoreRichness(right.modelEntry) - scoreRichness(left.modelEntry)
     || left.providerId.localeCompare(right.providerId)
   ))
@@ -58,7 +70,8 @@ export function pickRichestMatch(matches) {
   return matches
     .filter(match => Number(match?.score || 0) === highestScore)
     .sort((left, right) => (
-      scoreRichness(right.modelEntry) - scoreRichness(left.modelEntry)
+      left.sourceRank - right.sourceRank
+      || scoreRichness(right.modelEntry) - scoreRichness(left.modelEntry)
       || left.providerId.localeCompare(right.providerId)
     ))[0] || null
 }
@@ -76,29 +89,27 @@ export function scoreRichness(modelEntry) {
   return score
 }
 
-export function mergeCrossProviderCapabilities({ commandcodeModels, existingProviders, excludeIds }) {
+export function mergeCrossProviderCapabilities({ commandcodeModels, providerSources = [] }) {
   const models = commandcodeModels && typeof commandcodeModels === "object" ? commandcodeModels : {}
-  const excluded = new Set((excludeIds || []).filter(Boolean))
-  const comparableProviders = Object.fromEntries(
-    Object.entries(existingProviders || {})
-      .filter(([providerId, providerConfig]) => !excluded.has(providerId) && providerConfig?.models && typeof providerConfig.models === "object")
-      .map(([providerId, providerConfig]) => [providerId, providerConfig.models]),
-  )
 
   let mergedCount = 0
   for (const [modelId, commandcodeEntry] of Object.entries(models)) {
     if (!commandcodeEntry || typeof commandcodeEntry !== "object") continue
-    const match = pickRichestMatch(rankMatchCandidates(modelId, comparableProviders))
+    const match = pickRichestMatch(providerSources.flatMap((source, index) => (
+      rankMatchCandidates(modelId, source?.providers, {
+        sourceRank: Number.isInteger(source?.rank) ? source.rank : index,
+        sourceTag: source?.tagPrefix,
+      })
+    )))
     if (!match?.modelEntry) continue
-    const merged = mergeModelEntry(commandcodeEntry, match.modelEntry, match.providerId)
+    const merged = mergeModelEntry(commandcodeEntry, match.modelEntry, `${match.sourceTag}:${match.providerId}`)
     if (merged) mergedCount += 1
   }
   return mergedCount
 }
 
-function mergeModelEntry(target, source, providerId) {
+function mergeModelEntry(target, source, sourceTag) {
   let changed = false
-  const sourceTag = `cross-provider:${providerId}`
 
   const targetInputs = Array.isArray(target?.modalities?.input) ? target.modalities.input : null
   const sourceInputs = Array.isArray(source?.modalities?.input) ? source.modalities.input : []
