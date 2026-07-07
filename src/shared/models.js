@@ -7,18 +7,29 @@ export const COMMANDCODE_PROVIDER = {
 }
 
 export const FALLBACK_MODEL_REGISTRY = [
+  { id: "moonshotai/Kimi-K2.7-Code", name: "Kimi K2.7 Code", contextWindow: 262144 },
+  { id: "moonshotai/Kimi-K2.7-Code-Highspeed", name: "Kimi K2.7 Code Highspeed", contextWindow: 262144 },
   { id: "moonshotai/Kimi-K2.6", name: "Kimi K2.6", contextWindow: 262144 },
   { id: "moonshotai/Kimi-K2.5", name: "Kimi K2.5", contextWindow: 262144 },
   { id: "Qwen/Qwen3.7-Max", name: "Qwen 3.7 Max", contextWindow: 262144 },
   { id: "Qwen/Qwen3.7-Plus", name: "Qwen 3.7 Plus", contextWindow: 262144 },
   { id: "Qwen/Qwen3.7-Max-Free", name: "Qwen 3.7 Max Free", contextWindow: 262144 },
+  { id: "Qwen/Qwen3.6-Max-Preview", name: "Qwen 3.6 Max Preview", contextWindow: 262144 },
+  { id: "Qwen/Qwen3.6-Plus", name: "Qwen 3.6 Plus", contextWindow: 262144 },
   { id: "MiniMaxAI/MiniMax-M3", name: "MiniMax M3", contextWindow: 200000 },
   { id: "MiniMaxAI/MiniMax-M2.7", name: "MiniMax M2.7", contextWindow: 204800 },
   { id: "MiniMaxAI/MiniMax-M2.5", name: "MiniMax M2.5", contextWindow: 196000 },
   { id: "deepseek/deepseek-v4-pro", name: "DeepSeek V4 Pro", contextWindow: 200000 },
   { id: "deepseek/deepseek-v4-flash", name: "DeepSeek V4 Flash", contextWindow: 200000 },
+  { id: "zai-org/GLM-5.2", name: "GLM-5.2", contextWindow: 200000 },
+  { id: "zai-org/GLM-5.2-Fast", name: "GLM-5.2 Fast", contextWindow: 200000 },
   { id: "zai-org/GLM-5.1", name: "GLM-5.1", contextWindow: 200000 },
   { id: "zai-org/GLM-5", name: "GLM-5", contextWindow: 200000 },
+  { id: "xiaomi/mimo-v2.5-pro", name: "MiMo V2.5 Pro", contextWindow: 200000 },
+  { id: "xiaomi/mimo-v2.5", name: "MiMo V2.5", contextWindow: 200000 },
+  { id: "stepfun/Step-3.7-Flash", name: "Step 3.7 Flash", contextWindow: 200000 },
+  { id: "stepfun/Step-3.5-Flash", name: "Step 3.5 Flash", contextWindow: 200000 },
+  { id: "nvidia/nemotron-3-ultra-550b-a55b", name: "Nemotron 3 Ultra", contextWindow: 200000 },
 ]
 
 const MODEL_FAMILY_HINTS = [
@@ -31,6 +42,10 @@ const MODEL_FAMILY_HINTS = [
   },
   {
     prefix: "qwen/qwen3-7",
+    contextWindow: 262144,
+  },
+  {
+    prefix: "qwen/qwen3-6",
     contextWindow: 262144,
   },
   {
@@ -68,6 +83,15 @@ const MODEL_FAMILY_HINTS = [
     capabilities: { vision: true, pdf: true },
     reasoning: true,
     reasoningToggle: true,
+  },
+  {
+    prefix: "stepfun/step",
+    contextWindow: 200000,
+    reasoning: true,
+  },
+  {
+    prefix: "nvidia/nemotron",
+    reasoning: true,
   },
 ]
 

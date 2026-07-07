@@ -147,6 +147,34 @@ export function inferCmdDescriptionCapabilities(description, modelId) {
 }
 
 /**
+ * Extract context window from description text.
+ * Parses patterns like "1M context", "100K context", "long-context" (no number).
+ *
+ * @param {string} description - Model description
+ * @returns {number|null} - Context window in tokens, or null
+ */
+export function extractCmdContextWindow(description) {
+  const desc = (description || "").toLowerCase()
+
+  // Explicit number pattern: "1M context", "100K tokens", "512k"
+  const numberMatch = desc.match(/(\d+(?:\.\d+)?)\s*(m|k|mb|kb)\s*(?:context|tokens?)?/)
+  if (numberMatch) {
+    const num = parseFloat(numberMatch[1])
+    const unit = numberMatch[2].toLowerCase()
+    if (unit.startsWith("m")) return Math.round(num * 1048576)
+    if (unit.startsWith("k")) return Math.round(num * 1024)
+    return Math.round(num)
+  }
+
+  // Bare number near context: "context 100000", "ctx 64000"
+  const bareMatch = desc.match(/(?:context|ctx)\s*[:\s]+\s*(\d{5,})/)
+  if (bareMatch) return parseInt(bareMatch[1], 10)
+
+  // No explicit number found
+  return null
+}
+
+/**
  * Build catalog rows from parsed cmd models, optionally filtered by section.
  * Compatible with existing catalog format { id, name, context_length, tags, catalog_capabilities }.
  *
@@ -161,10 +189,15 @@ export function buildCmdCatalogRows(parsedModels, { filterSection } = {}) {
 
   return filtered.map(model => {
     const capabilities = inferCmdDescriptionCapabilities(model.description, model.id)
+
+    // Priority: 1) description-based context, 2) fallback registry/hints, 3) default
+    const descContext = extractCmdContextWindow(model.description)
+    const contextWindow = descContext || resolveContextWindow(model.id)
+
     return {
       id: model.id,
       name: model.name,
-      context_length: resolveContextWindow(model.id),
+      context_length: contextWindow,
       tags: [],
       catalog_capabilities: capabilities,
     }
