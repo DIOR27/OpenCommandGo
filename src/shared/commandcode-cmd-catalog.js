@@ -123,25 +123,38 @@ export function inferCmdDescriptionCapabilities(description, modelId) {
   const desc = (description || "").toLowerCase()
 
   const hasVision = desc.includes("vision")
-  const hasMultimodal = /multimodal|multi-?mode|multimodality/.test(desc)
+  const hasMultimodal = /multimodal|multi-?mode|multimodality|multimedia/.test(desc)
   const hasReasoning = desc.includes("reasoning")
+  const hasAudio = desc.includes("audio") || desc.includes("voice")
+  const hasVideo = desc.includes("video")
+
+  // multimodal implies image + audio + video support
+  const imageSupport = hasVision || hasMultimodal
+  const audioSupport = hasAudio || hasMultimodal
+  const videoSupport = hasVideo || hasMultimodal
 
   return {
     vision: {
-      supported: hasVision || hasMultimodal || null,
+      supported: imageSupport || null,
       source: hasVision ? "cmd:desc.vision" : hasMultimodal ? "cmd:desc.multimodal" : null,
     },
     pdf: {
       supported: hasMultimodal ? true : null,
       source: hasMultimodal ? "cmd:desc.multimodal" : null,
     },
-    audio: { supported: null, source: null },
-    video: { supported: null, source: null },
+    audio: {
+      supported: audioSupport || null,
+      source: hasAudio ? "cmd:desc.audio" : hasMultimodal ? "cmd:desc.multimodal" : null,
+    },
+    video: {
+      supported: videoSupport || null,
+      source: hasVideo ? "cmd:desc.video" : hasMultimodal ? "cmd:desc.multimodal" : null,
+    },
     reasoning: {
       supported: hasReasoning ? true : null,
       source: hasReasoning ? "cmd:desc.reasoning" : null,
     },
-    hasImage: hasVision || hasMultimodal,
+    hasImage: imageSupport,
     hasReasoning,
   }
 }

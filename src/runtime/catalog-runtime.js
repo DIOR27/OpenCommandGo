@@ -2,7 +2,6 @@ import { syncOpenCodeConfig } from "../opencode/config.js"
 import { deriveCatalogFromCompatibility, extractModelRows, fallbackCatalog, normalizeCatalogRows } from "../shared/catalog.js"
 import { supportsCommandCodeReasoning } from "../shared/commandcode-thinking.js"
 import { resolveContextWindow } from "../shared/context-windows.js"
-import { t } from "../shared/i18n.js"
 import { COMMANDCODE_PROVIDER, resolveBridgeCapabilities, resolveBridgeInputModalities } from "../shared/models.js"
 import { callCommandCodeAlpha, collectReasoning, collectText, collectToolCalls } from "./chat-bridge.js"
 import { buildCmdCatalogRows, fetchCmdModelList, parseCmdModelList, resolveCmdBinary } from "../shared/commandcode-cmd-catalog.js"
@@ -217,44 +216,72 @@ export function createCatalogController({ initialCompatibilityMatrix, writeCompa
 
   async function fetchAvailableCatalog(settings) {
     // PRIMARY: try cmd --list-models first
+    let cmdRows = []
+    let cmdSourced = false
     try {
       const cmdPath = resolveCmdBinary()
       if (cmdPath) {
         log(`CATALOG cmd_binary=${cmdPath}`)
         const stdout = await fetchCmdModelList({ cmdPath, timeoutMs: 10000 })
         const parsed = parseCmdModelList(stdout)
-        const rows = buildCmdCatalogRows(parsed, { filterSection: "Open Source" })
-        if (rows.length > 0) {
-          log(`CATALOG cmd_source models=${rows.length}`)
-          return rows
+        cmdRows = buildCmdCatalogRows(parsed, { filterSection: "Open Source" })
+        if (cmdRows.length > 0) {
+          cmdSourced = true
+          log(`CATALOG cmd_source models=${cmdRows.length}`)
         }
       }
     } catch (error) {
       log(`CATALOG cmd_error ${error instanceof Error ? error.message : String(error)}`)
     }
 
-    // FALLBACK 1: HTTP API /provider/v1/models
-    try {
-      const response = await fetch(`${settings.commandCodeBaseUrl}/provider/v1/models`, {
-        headers: {
-          Authorization: `Bearer ${settings.commandCodeApiKey}`,
-        },
-        signal: AbortSignal.timeout(8000),
-      })
-      if (!response.ok) throw new Error(t("error.upstream_models", response.status))
-      const data = await response.json()
-      const rows = normalizeCatalogRows(extractModelRows(data))
-      if (rows.length > 0) return rows
-    } catch (error) {
-      log(`CATALOG fetch_error ${error instanceof Error ? error.message : String(error)}`)
+    // Enrich cmd-sourced rows with context_length from HTTP API
+    if (cmdSourced) {
+      try {
+        const apiRows = await fetchHttpApiModels(settings, { timeoutMs: 6000 })
+        if (apiRows.length > 0) {
+          const contextLookup = new Map(apiRows.filter(r => r.context_length > 0).map(r => [r.id, r.context_length]))
+          let enriched = 0
+          for (const row of cmdRows) {
+            const apiContext = contextLookup.get(row.id)
+            if (apiContext && (!row.context_length || row.context_length < apiContext)) {
+              row.context_length = apiContext
+              enriched++
+            }
+          }
+          log(`CATALOG context_enriched from_api=${enriched}`)
+        }
+      } catch {
+        // context enrichment failed, cmd context is already reasonable
+      }
+      return cmdRows
     }
 
-    // FALLBACK 2: derive from existing compatibility matrix
-    const derived = deriveCatalogFromCompatibility(compatibilityMatrix)
-    if (derived.length > 0) return derived
+	// FALLBACK 1: HTTP API /provider/v1/models
+	const apiRows = await fetchHttpApiModels(settings)
+	if (apiRows.length > 0) return apiRows
 
-    // FALLBACK 3: hardcoded fallback catalog
-    return fallbackCatalog()
+	// FALLBACK 2: derive from existing compatibility matrix
+	const derived = deriveCatalogFromCompatibility(compatibilityMatrix)
+	if (derived.length > 0) return derived
+
+	// FALLBACK 3: hardcoded fallback catalog
+	return fallbackCatalog()
+  }
+}
+
+async function fetchHttpApiModels(settings, { timeoutMs = 8000 } = {}) {
+  try {
+    const response = await fetch(`${settings.commandCodeBaseUrl}/provider/v1/models`, {
+      headers: {
+        Authorization: `Bearer ${settings.commandCodeApiKey}`,
+      },
+      signal: AbortSignal.timeout(timeoutMs),
+    })
+    if (!response.ok) throw new Error(String(response.status))
+    const data = await response.json()
+    return normalizeCatalogRows(extractModelRows(data))
+  } catch {
+    return []
   }
 }
 
