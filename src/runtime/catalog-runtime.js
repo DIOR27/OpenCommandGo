@@ -5,6 +5,7 @@ import { resolveContextWindow } from "../shared/context-windows.js"
 import { t } from "../shared/i18n.js"
 import { COMMANDCODE_PROVIDER, resolveBridgeCapabilities, resolveBridgeInputModalities } from "../shared/models.js"
 import { callCommandCodeAlpha, collectReasoning, collectText, collectToolCalls } from "./chat-bridge.js"
+import { buildCmdCatalogRows, fetchCmdModelList, parseCmdModelList, resolveCmdBinary } from "../shared/commandcode-cmd-catalog.js"
 
 const IMAGE_TEST_URL = "https://upload.wikimedia.org/wikipedia/commons/thumb/3/3a/Cat03.jpg/320px-Cat03.jpg"
 const UPSTREAM_TIMEOUT_MS = 120000
@@ -215,6 +216,24 @@ export function createCatalogController({ initialCompatibilityMatrix, writeCompa
   }
 
   async function fetchAvailableCatalog(settings) {
+    // PRIMARY: try cmd --list-models first
+    try {
+      const cmdPath = resolveCmdBinary()
+      if (cmdPath) {
+        log(`CATALOG cmd_binary=${cmdPath}`)
+        const stdout = await fetchCmdModelList({ cmdPath, timeoutMs: 10000 })
+        const parsed = parseCmdModelList(stdout)
+        const rows = buildCmdCatalogRows(parsed, { filterSection: "Open Source" })
+        if (rows.length > 0) {
+          log(`CATALOG cmd_source models=${rows.length}`)
+          return rows
+        }
+      }
+    } catch (error) {
+      log(`CATALOG cmd_error ${error instanceof Error ? error.message : String(error)}`)
+    }
+
+    // FALLBACK 1: HTTP API /provider/v1/models
     try {
       const response = await fetch(`${settings.commandCodeBaseUrl}/provider/v1/models`, {
         headers: {
@@ -230,9 +249,11 @@ export function createCatalogController({ initialCompatibilityMatrix, writeCompa
       log(`CATALOG fetch_error ${error instanceof Error ? error.message : String(error)}`)
     }
 
+    // FALLBACK 2: derive from existing compatibility matrix
     const derived = deriveCatalogFromCompatibility(compatibilityMatrix)
     if (derived.length > 0) return derived
 
+    // FALLBACK 3: hardcoded fallback catalog
     return fallbackCatalog()
   }
 }

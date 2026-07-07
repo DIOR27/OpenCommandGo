@@ -129,8 +129,10 @@ The catalog is dynamically built at runtime. Each `ocg start` refreshes the cata
 
 During a refresh the CLI:
 
-- Queries `https://api.commandcode.ai/provider/v1/models`
-- Filters compatible candidates
+- Runs `cmd --list-models` as the primary source for model listing and capability inference
+- Falls back to `https://api.commandcode.ai/provider/v1/models` if `cmd` is unavailable
+- Filters to Open Source models only (Go subscription scope)
+- Infers capabilities (vision, multimodal, reasoning) from model descriptions via keyword matching
 - Tests compatibility conservatively
 - Avoids pruning the catalog due to transient quota or credit errors
 - Resynchronizes visible models in OpenCode

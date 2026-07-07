@@ -616,6 +616,7 @@ function createIsolatedCliContext(port, mockPort) {
       COMMANDCODE_API_KEY: "test-commandcode-key",
       COMMANDCODE_BASE_URL: `http://127.0.0.1:${mockPort}`,
       SHIM_PORT: String(port),
+      OCG_SKIP_CMD_CATALOG: "1",
       OCG_WATCHDOG_INTERVAL_MS: "250",
       OCG_WATCHDOG_MAX_FAILURES: "2",
       OCG_WATCHDOG_RESTART_DELAY_MS: "250",
