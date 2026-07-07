@@ -2,9 +2,10 @@ import { syncOpenCodeConfig } from "../opencode/config.js"
 import { deriveCatalogFromCompatibility, extractModelRows, fallbackCatalog, normalizeCatalogRows } from "../shared/catalog.js"
 import { supportsCommandCodeReasoning } from "../shared/commandcode-thinking.js"
 import { resolveContextWindow } from "../shared/context-windows.js"
-import { COMMANDCODE_PROVIDER, resolveBridgeCapabilities, resolveBridgeInputModalities } from "../shared/models.js"
+import { COMMANDCODE_PROVIDER, comparableCommandCodeModel, providerlessCommandCodeModel, resolveBridgeCapabilities, resolveBridgeInputModalities } from "../shared/models.js"
 import { callCommandCodeAlpha, collectReasoning, collectText, collectToolCalls } from "./chat-bridge.js"
 import { buildCmdCatalogRows, fetchCmdModelList, parseCmdModelList, resolveCmdBinary } from "../shared/commandcode-cmd-catalog.js"
+import { readResolvedProvidersFromSidecar } from "../opencode/sidecar-resolved-providers.js"
 
 const IMAGE_TEST_URL = "https://upload.wikimedia.org/wikipedia/commons/thumb/3/3a/Cat03.jpg/320px-Cat03.jpg"
 const UPSTREAM_TIMEOUT_MS = 120000
@@ -253,6 +254,70 @@ export function createCatalogController({ initialCompatibilityMatrix, writeCompa
       } catch {
         // context enrichment failed, cmd context is already reasonable
       }
+
+      // Enrich cmd-sourced rows with capabilities from OpenCode Desktop sidecar
+      try {
+        const sidecarResult = await readResolvedProvidersFromSidecar({ timeoutMs: 2000 })
+        if (sidecarResult.ok && Object.keys(sidecarResult.providers).length > 0) {
+          // Build normalized lookup across all providers, including providerless fallback
+          const sidecarModels = new Map()
+          for (const provider of Object.values(sidecarResult.providers)) {
+            if (!provider.models) continue
+            for (const [rawId, entry] of Object.entries(provider.models)) {
+              const normalized = comparableCommandCodeModel(rawId)
+              sidecarModels.set(normalized, entry)
+              const providerless = providerlessCommandCodeModel(rawId)
+              if (providerless !== normalized) sidecarModels.set(providerless, entry)
+            }
+          }
+
+          let enriched = 0
+          for (const row of cmdRows) {
+            const normalizedCmdId = comparableCommandCodeModel(row.id)
+            let match = sidecarModels.get(normalizedCmdId)
+            if (!match) {
+              match = sidecarModels.get(providerlessCommandCodeModel(row.id))
+            }
+            if (match) {
+              const caps = match.capabilities
+              if (caps && typeof caps === "object") {
+                if (!row.catalog_capabilities) row.catalog_capabilities = {}
+                if (caps.vision && caps.vision.supported !== undefined && caps.vision.supported !== null) {
+                  row.catalog_capabilities.vision = { supported: caps.vision.supported, source: "sidecar" }
+                }
+                if (caps.pdf && caps.pdf.supported !== undefined && caps.pdf.supported !== null) {
+                  row.catalog_capabilities.pdf = { supported: caps.pdf.supported, source: "sidecar" }
+                }
+                if (caps.audio && caps.audio.supported !== undefined && caps.audio.supported !== null) {
+                  row.catalog_capabilities.audio = { supported: caps.audio.supported, source: "sidecar" }
+                }
+                if (caps.video && caps.video.supported !== undefined && caps.video.supported !== null) {
+                  row.catalog_capabilities.video = { supported: caps.video.supported, source: "sidecar" }
+                }
+                if (caps.reasoning && caps.reasoning.supported !== undefined && caps.reasoning.supported !== null) {
+                  row.catalog_capabilities.reasoning = { supported: caps.reasoning.supported, source: "sidecar" }
+                }
+              }
+
+              // Reconstruct modalities.input based on merged capabilities
+              const modalities = row.modalities || (row.modalities = {})
+              const input = modalities.input ? [...modalities.input] : ["text"]
+              const cc = row.catalog_capabilities
+              if (cc.vision?.supported === true && !input.includes("image")) input.push("image")
+              if (cc.pdf?.supported === true && !input.includes("pdf")) input.push("pdf")
+              if (cc.audio?.supported === true && !input.includes("audio")) input.push("audio")
+              if (cc.video?.supported === true && !input.includes("video")) input.push("video")
+              modalities.input = input
+
+              enriched++
+            }
+          }
+          if (enriched > 0) log(`CATALOG sidecar_enriched models=${enriched}`)
+        }
+      } catch {
+        // sidecar enrichment failed silently, cmd rows keep current values
+      }
+
       return cmdRows
     }
 
@@ -327,6 +392,8 @@ async function testModelCompatibility(model, displayName, settings, options = {}
       output_chars: 0,
       source: catalogVision.supported === null ? "probe" : catalogVision.source,
     },
+    audio: { ok: false, output_chars: 0, source: null },
+    video: { ok: false, output_chars: 0, source: null },
     reasoning: { ok: false, chars: 0 },
     tools: { ok: false, calls: 0 },
     capabilities: {
@@ -414,6 +481,86 @@ async function testModelCompatibility(model, displayName, settings, options = {}
     }
   }
 
+  // Audio probe — only in full mode
+  if (probeMode === "full") {
+    const catalogAudio = normalizeCatalogFileCapability(options.catalogCapabilities?.audio)
+    if (catalogAudio.supported !== null) {
+      summary.audio.ok = catalogAudio.supported
+      summary.capabilities.audio = {
+        supported: catalogAudio.supported,
+        source: catalogAudio.source,
+      }
+      if (catalogAudio.supported === false) {
+        summary.notes.push(`Catálogo marcó audio no soportado (${catalogAudio.source}).`)
+      }
+    } else {
+      try {
+        const audioRun = await callCommandCodeAlpha({
+          messages: [
+            {
+              role: "user",
+              content: [
+                { type: "text", text: "Reply OK if you can process this message." },
+                { type: "input_audio", audio: { data: "placeholder" } },
+              ],
+            },
+          ],
+          stream: false,
+          max_tokens: 64,
+        }, model, settings, { timeoutMs: probeTimeoutMs })
+        const audioText = collectText(audioRun.events).trim()
+        const audioOk = audioText.length > 0
+        summary.audio = { ok: audioOk, output_chars: audioText.length, source: "probe" }
+        summary.capabilities.audio = { supported: audioOk, source: "probe" }
+        if (!audioText.length) summary.notes.push("Audio probe: no devolvió texto.")
+      } catch (error) {
+        summary.audio = { ok: false, output_chars: 0, source: "probe_error" }
+        summary.capabilities.audio = { supported: false, source: "probe_error" }
+        summary.notes.push(`Audio error: ${error instanceof Error ? error.message : String(error)}`)
+      }
+    }
+  }
+
+  // Video probe — only in full mode
+  if (probeMode === "full") {
+    const catalogVideo = normalizeCatalogFileCapability(options.catalogCapabilities?.video)
+    if (catalogVideo.supported !== null) {
+      summary.video.ok = catalogVideo.supported
+      summary.capabilities.video = {
+        supported: catalogVideo.supported,
+        source: catalogVideo.source,
+      }
+      if (catalogVideo.supported === false) {
+        summary.notes.push(`Catálogo marcó video no soportado (${catalogVideo.source}).`)
+      }
+    } else {
+      try {
+        const videoRun = await callCommandCodeAlpha({
+          messages: [
+            {
+              role: "user",
+              content: [
+                { type: "text", text: "Reply OK if you can process this message." },
+                { type: "input_video", video: { data: "placeholder" } },
+              ],
+            },
+          ],
+          stream: false,
+          max_tokens: 64,
+        }, model, settings, { timeoutMs: probeTimeoutMs })
+        const videoText = collectText(videoRun.events).trim()
+        const videoOk = videoText.length > 0
+        summary.video = { ok: videoOk, output_chars: videoText.length, source: "probe" }
+        summary.capabilities.video = { supported: videoOk, source: "probe" }
+        if (!videoText.length) summary.notes.push("Video probe: no devolvió texto.")
+      } catch (error) {
+        summary.video = { ok: false, output_chars: 0, source: "probe_error" }
+        summary.capabilities.video = { supported: false, source: "probe_error" }
+        summary.notes.push(`Video error: ${error instanceof Error ? error.message : String(error)}`)
+      }
+    }
+  }
+
   if (probeMode === "full") {
     try {
       const reasoningRun = await callCommandCodeAlpha({
@@ -470,7 +617,7 @@ async function testModelCompatibility(model, displayName, settings, options = {}
   }
 
   const capabilitySignals = probeMode === "full"
-    ? [summary.text.ok, summary.image.ok, summary.reasoning.ok, summary.tools.ok]
+    ? [summary.text.ok, summary.image.ok, summary.reasoning.ok, summary.tools.ok, summary.audio.ok, summary.video.ok]
     : [summary.text.ok, summary.image.ok]
   const capabilities = capabilitySignals.filter(Boolean).length
   const quotaBlocked = summary.notes.some(note => isInsufficientCreditsMessage(note))
