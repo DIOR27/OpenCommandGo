@@ -2,6 +2,12 @@ import { execFile, execFileSync } from "node:child_process"
 import { accessSync, constants } from "node:fs"
 import { join } from "node:path"
 import { resolveContextWindow } from "./context-windows.js"
+import { FALLBACK_MODEL_REGISTRY } from "./models.js"
+
+// Lookup map for display names from fallback registry
+const REGISTRY_NAME_LOOKUP = new Map(
+  FALLBACK_MODEL_REGISTRY.map(m => [m.id.toLowerCase(), m.name]),
+)
 
 /**
  * Resolve the `cmd` binary path via PATH lookup or `sh -lc 'command -v cmd'`.
@@ -97,7 +103,7 @@ export function parseCmdModelList(stdout) {
     if (modelMatch && currentSection) {
       models.push({
         id: modelMatch[1],
-        name: modelMatch[1],
+        name: formatCmdModelName(modelMatch[1]),
         description: modelMatch[2].trim(),
         section: currentSection,
       })
@@ -109,6 +115,24 @@ export function parseCmdModelList(stdout) {
   }
 
   return models
+}
+
+/**
+ * Format a model ID into a human-readable display name.
+ * "MiniMaxAI/MiniMax-M3" → "MiniMax M3"
+ * "deepseek/deepseek-v4-flash" → "DeepSeek V4 Flash"
+ */
+export function formatCmdModelName(id) {
+  // Take last part after /
+  const raw = (id || "").split("/").pop() || ""
+  // Replace - and _ with spaces
+  const spaced = raw.replace(/[-_]/g, " ")
+  // Capitalize each word
+  return spaced
+    .split(/\s+/)
+    .filter(Boolean)
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(" ")
 }
 
 /**
@@ -203,13 +227,16 @@ export function buildCmdCatalogRows(parsedModels, { filterSection } = {}) {
   return filtered.map(model => {
     const capabilities = inferCmdDescriptionCapabilities(model.description, model.id)
 
+    // Priority: 1) registry name, 2) formatted from id, 3) raw id
+    const displayName = REGISTRY_NAME_LOOKUP.get(model.id.toLowerCase()) || formatCmdModelName(model.id) || model.id
+
     // Priority: 1) description-based context, 2) fallback registry/hints, 3) default
     const descContext = extractCmdContextWindow(model.description)
     const contextWindow = descContext || resolveContextWindow(model.id)
 
     return {
       id: model.id,
-      name: model.name,
+      name: displayName,
       context_length: contextWindow,
       tags: [],
       catalog_capabilities: capabilities,
