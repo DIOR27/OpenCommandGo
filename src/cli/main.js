@@ -10,6 +10,7 @@ import { detectOpenCodeInstallations, inspectOpenCodeProvider, removeOpenCodePro
 import { refreshModelCatalogNow, startServer } from "../runtime/server.js"
 import { getLocale, t } from "../shared/i18n.js"
 import { COMMANDCODE_PROVIDER } from "../shared/models.js"
+import { getFreeModelsFromCmd } from "../shared/commandcode-cmd-catalog.js"
 import { findPidByPort, gracefulKill, isProcessAlive, sleep } from "../shared/process-utils.js"
 
 export async function runCli(args) {
@@ -179,6 +180,19 @@ async function startCommand(args) {
     console.log(t("start.updated"))
   } catch (error) {
     console.log(t("start.warning"))
+  }
+
+  // Show currently free models (from `cmd --list-models`)
+  try {
+    const freeModels = await getFreeModelsFromCmd()
+    if (freeModels.length > 0) {
+      console.log(t("start.free_models_header"))
+      for (const model of freeModels) {
+        console.log(t("start.free_model_item", model.name, model.id))
+      }
+    }
+  } catch {
+    // Non-critical: never block start on free-model detection
   }
 
   if (!background) {

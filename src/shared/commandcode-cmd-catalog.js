@@ -101,11 +101,13 @@ export function parseCmdModelList(stdout) {
     // Try to match as a model line: <model-id>  <description> (2+ spaces separator)
     const modelMatch = line.match(/^(\S+)\s{2,}(.+)/)
     if (modelMatch && currentSection) {
+      const description = modelMatch[2].trim()
       models.push({
         id: modelMatch[1],
         name: formatCmdModelName(modelMatch[1]),
-        description: modelMatch[2].trim(),
+        description,
         section: currentSection,
+        free: /\bFREE\b/i.test(description),
       })
       continue
     }
@@ -237,9 +239,28 @@ export function buildCmdCatalogRows(parsedModels, { filterSection } = {}) {
     return {
       id: model.id,
       name: displayName,
+      free: model.free || false,
       context_length: contextWindow,
       tags: [],
       catalog_capabilities: capabilities,
     }
   })
+}
+
+/**
+ * Query `cmd --list-models` and return only the models currently marked FREE.
+ * Returns an array of { id, name } or an empty array if cmd is unavailable.
+ */
+export async function getFreeModelsFromCmd() {
+  const cmdPath = resolveCmdBinary()
+  if (!cmdPath) return []
+  try {
+    const stdout = await fetchCmdModelList({ cmdPath, timeoutMs: 10000 })
+    const parsed = parseCmdModelList(stdout)
+    return parsed
+      .filter(model => model.free)
+      .map(model => ({ id: model.id, name: model.name }))
+  } catch {
+    return []
+  }
 }
