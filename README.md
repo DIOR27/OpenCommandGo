@@ -187,12 +187,6 @@ Recommended:
 - `ocg logs --watchdog` reads the watchdog log.
 - `ocg reset` deletes only local config/secrets so the installation can be reconfigured cleanly.
 
-## QA and Release
-
-- CI: `C:\Users\diego\OneDrive\Documentos\commandcode-go-around\.github\workflows\ci.yml`
-- Tagged npm publish: `C:\Users\diego\OneDrive\Documentos\commandcode-go-around\.github\workflows\publish.yml`
-- Develop → main auto-release gate: `C:\Users\diego\OneDrive\Documentos\commandcode-go-around\.github\workflows\auto-release.yml`
-
 ## Current Limitations
 
 - OpenCommandGo is still an OpenAI-compatible shim, not a native OpenCode plugin package
