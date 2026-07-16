@@ -135,17 +135,16 @@ export async function startServer() {
         }
 
         const compat = compatibilityMatrix?.models?.[model]
-        const supportedInputs = resolveBridgeInputModalities(compat)
-        if (!supportedInputs.includes("image") && requestHasImage(body.messages)) {
-          log(`REQUEST image stripped model=${model} reason=text_only_model`)
+        if (!resolveBridgeInputModalities(compat).includes("image") && requestHasImage(body.messages)) {
+          log(`REQUEST image forwarded model=${model} note=text_only_in_catalog_may_still_accept`)
         }
 
         if (body.stream === true) {
-          const upstream = await startCommandCodeAlphaStream(body, model, settings, { log, supportedInputs })
+          const upstream = await startCommandCodeAlphaStream(body, model, settings, { log })
           return streamOpenAIResponse(res, model, upstream, { log })
         }
 
-        const upstream = await callCommandCodeAlpha(body, model, settings, { log, supportedInputs })
+        const upstream = await callCommandCodeAlpha(body, model, settings, { log })
         return json(res, 200, buildOpenAICompletion(model, upstream))
       }
 

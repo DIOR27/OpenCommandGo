@@ -9,8 +9,7 @@ const UPSTREAM_TIMEOUT_MS = 120000
 export async function callCommandCodeAlpha(body, model, settings, options = {}) {
   const sessionId = randomUUID()
   const startedAt = Date.now()
-  const supportedInputs = Array.isArray(options.supportedInputs) ? options.supportedInputs : null
-  const payload = buildCommandCodePayload(body, model, sessionId, supportedInputs)
+  const payload = buildCommandCodePayload(body, model, sessionId)
 
   options.log?.(`REQUEST start session=${sessionId} model=${model} stream=${body.stream === true} messages=${payload.params.messages.length} tools=${payload.params.tools?.length || 0}`)
 
@@ -41,8 +40,7 @@ export async function callCommandCodeAlpha(body, model, settings, options = {}) 
 export async function startCommandCodeAlphaStream(body, model, settings, options = {}) {
   const sessionId = randomUUID()
   const startedAt = Date.now()
-  const supportedInputs = Array.isArray(options.supportedInputs) ? options.supportedInputs : null
-  const payload = buildCommandCodePayload(body, model, sessionId, supportedInputs)
+  const payload = buildCommandCodePayload(body, model, sessionId)
 
   options.log?.(`REQUEST start session=${sessionId} model=${model} stream=true messages=${payload.params.messages.length} tools=${payload.params.tools?.length || 0}`)
 
@@ -392,8 +390,8 @@ export function extractUsage(usage) {
   }
 }
 
-function buildCommandCodePayload(body, model, sessionId, supportedInputs = null) {
-  const messages = toCommandCodeMessages(body.messages, supportedInputs)
+function buildCommandCodePayload(body, model, sessionId) {
+  const messages = toCommandCodeMessages(body.messages)
   const tools = Array.isArray(body.tools) && body.tools.length > 0
     ? toCommandCodeTools(body.tools)
     : []
@@ -438,12 +436,11 @@ function fetchCommandCodeAlpha(payload, sessionId, settings, options = {}) {
   })
 }
 
-export function toCommandCodeMessages(messages, supportedInputs = null) {
+export function toCommandCodeMessages(messages) {
   if (!Array.isArray(messages)) return []
 
   const toolNames = new Map()
   const converted = []
-  const allowImage = !Array.isArray(supportedInputs) || supportedInputs.includes("image")
 
   for (const message of messages) {
     if (!message || typeof message !== "object") continue
@@ -495,7 +492,7 @@ export function toCommandCodeMessages(messages, supportedInputs = null) {
       continue
     }
 
-    const blocks = toCommandCodeContentBlocks(message.content, allowImage)
+    const blocks = toCommandCodeContentBlocks(message.content)
     if (!blocks.length) continue
     const hasOnlyText = blocks.every(block => block.type === "text")
     if (hasOnlyText) {
@@ -577,7 +574,7 @@ function messageText(content) {
   return ""
 }
 
-function toCommandCodeContentBlocks(content, allowImage = true) {
+function toCommandCodeContentBlocks(content) {
   if (typeof content === "string") {
     return content ? [{ type: "text", text: content }] : []
   }
@@ -597,8 +594,6 @@ function toCommandCodeContentBlocks(content, allowImage = true) {
       if (text) blocks.push({ type: "text", text })
       continue
     }
-
-    if (!allowImage) continue
 
     const imageBlock = normalizeImageBlock(part)
     if (imageBlock) {

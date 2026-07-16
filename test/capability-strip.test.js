@@ -24,44 +24,39 @@ describe("xiaomi mimo capability separation", () => {
   })
 })
 
-describe("chat-bridge image stripping", () => {
-  it("strips image_url blocks when model does not support image", () => {
+describe("chat-bridge forwards image even for text-only catalog models", () => {
+  it("keeps image_url blocks even when model modalities exclude image", () => {
     const messages = [
       { role: "user", content: [
         { type: "text", text: "describe this" },
         { type: "image_url", image_url: { url: "https://example.com/a.png" } },
       ] },
     ]
-    const converted = toCommandCodeMessages(messages, ["text"])
+    const converted = toCommandCodeMessages(messages)
     assert.equal(converted.length, 1)
     assert.equal(converted[0].role, "user")
-    const content = converted[0].content
-    assert.equal(typeof content, "string", "image stripped, only text remains")
-    assert.ok(content.includes("describe this"))
-  })
-
-  it("keeps image blocks when model supports image", () => {
-    const messages = [
-      { role: "user", content: [
-        { type: "text", text: "describe this" },
-        { type: "image_url", image_url: { url: "https://example.com/a.png" } },
-      ] },
-    ]
-    const converted = toCommandCodeMessages(messages, ["text", "image"])
-    assert.equal(converted.length, 1)
     const blocks = converted[0].content
-    assert.ok(Array.isArray(blocks))
+    assert.ok(Array.isArray(blocks), "image is forwarded as blocks, not stripped to string")
     assert.ok(blocks.some(block => block.type === "image"))
   })
 
-  it("strips input_image blocks when model does not support image", () => {
+  it("keeps input_image blocks", () => {
     const messages = [
       { role: "user", content: [
         { type: "text", text: "look" },
         { type: "input_image", image_url: "https://example.com/b.png" },
       ] },
     ]
-    const converted = toCommandCodeMessages(messages, ["text"])
+    const converted = toCommandCodeMessages(messages)
+    assert.equal(converted.length, 1)
+    const blocks = converted[0].content
+    assert.ok(Array.isArray(blocks))
+    assert.ok(blocks.some(block => block.type === "image"))
+  })
+
+  it("still normalizes plain text to a string block", () => {
+    const messages = [{ role: "user", content: "just text" }]
+    const converted = toCommandCodeMessages(messages)
     assert.equal(converted.length, 1)
     assert.equal(typeof converted[0].content, "string")
   })
