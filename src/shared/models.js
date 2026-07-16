@@ -79,6 +79,11 @@ const MODEL_FAMILY_HINTS = [
     reasoningToggle: true,
   },
   {
+    prefix: "xiaomi/mimo-v2-5-pro",
+    reasoning: true,
+    reasoningToggle: true,
+  },
+  {
     prefix: "xiaomi/mimo-v2-5",
     capabilities: { vision: true, pdf: true },
     reasoning: true,

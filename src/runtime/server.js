@@ -1,7 +1,7 @@
 import { createServer } from "node:http"
 import { getPaths, ensureDir } from "../config/paths.js"
 import { clearPid, getRuntimeSettings, readCompatibilityMatrix, writeCompatibilityMatrix, writePid } from "../config/store.js"
-import { COMMANDCODE_PROVIDER } from "../shared/models.js"
+import { COMMANDCODE_PROVIDER, resolveBridgeInputModalities } from "../shared/models.js"
 import { t } from "../shared/i18n.js"
 import { buildOpenAICompletion, callCommandCodeAlpha, startCommandCodeAlphaStream, streamOpenAIResponse, summarizeIncomingMessages } from "./chat-bridge.js"
 import { createCatalogController } from "./catalog-runtime.js"
@@ -34,6 +34,7 @@ export async function startServer() {
   if (currentServer) return currentServer
 
   const settings = getRuntimeSettings()
+  const compatibilityMatrix = commandCodeCatalogController.getCompatibilityMatrix()
   if (!settings.allowRemoteHost && !isLoopbackHost(settings.host)) {
     throw new Error(t("error.host_not_allowed", settings.host))
   }
@@ -128,17 +129,23 @@ export async function startServer() {
         log(`REQUEST raw model=${body.model || ""} content_summary=${summarizeIncomingMessages(body.messages)}`)
 
         const model = typeof body.model === "string" ? body.model.trim() : ""
-        const currentModelSet = new Set(commandCodeCatalogController.getAvailableCatalog().map(entry => entry.id))
-        if (!currentModelSet.has(model)) {
+        const catalogEntry = commandCodeCatalogController.getAvailableCatalog().find(entry => entry.id === model)
+        if (!catalogEntry) {
           return json(res, 400, openAIError("model_not_allowed", `Modelo no permitido: ${model || "(vacío)"}`))
         }
 
+        const compat = compatibilityMatrix?.models?.[model]
+        const supportedInputs = resolveBridgeInputModalities(compat)
+        if (!supportedInputs.includes("image") && requestHasImage(body.messages)) {
+          log(`REQUEST image stripped model=${model} reason=text_only_model`)
+        }
+
         if (body.stream === true) {
-          const upstream = await startCommandCodeAlphaStream(body, model, settings, { log })
+          const upstream = await startCommandCodeAlphaStream(body, model, settings, { log, supportedInputs })
           return streamOpenAIResponse(res, model, upstream, { log })
         }
 
-        const upstream = await callCommandCodeAlpha(body, model, settings, { log })
+        const upstream = await callCommandCodeAlpha(body, model, settings, { log, supportedInputs })
         return json(res, 200, buildOpenAICompletion(model, upstream))
       }
 
@@ -162,6 +169,20 @@ export async function startServer() {
   console.log(t("server.listening", settings.host, settings.port))
   commandCodeCatalogController.schedule(settings)
   return server
+}
+
+function requestHasImage(messages) {
+  if (!Array.isArray(messages)) return false
+  for (const message of messages) {
+    if (!message || typeof message !== "object") continue
+    const content = message.content
+    const parts = typeof content === "string" ? [] : Array.isArray(content) ? content : []
+    for (const part of parts) {
+      if (!part || typeof part !== "object") continue
+      if (part.type === "image" || part.type === "image_url" || part.type === "input_image") return true
+    }
+  }
+  return false
 }
 
 function log(line) {

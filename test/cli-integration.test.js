@@ -174,6 +174,28 @@ describe("ocg CLI integration", () => {
     assert.equal(showAll.code, 0, showAll.stderr)
     assert.match(showAll.stdout, /CommandCode:/)
   })
+
+  it("re-enables commandcode providers when OpenCode disabled them in opencode.jsonc", { timeout: 20000 }, async () => {
+    const commandCodeMock = await startMockCommandCodeServer()
+    const ctx = createIsolatedCliContext(await getFreePort(), commandCodeMock.port)
+    registerCleanup(ctx, commandCodeMock)
+
+    seedOpenCodeConfig(ctx.paths.opencodeConfigFile)
+    writeFileSync(`${ctx.paths.opencodeConfigFile}c`, JSON.stringify({
+      $schema: "https://opencode.ai/config.json",
+      disabled_providers: ["ocg", "commandcode", "other-provider"],
+    }, null, 2), "utf8")
+
+    const refreshed = await runCli(["refresh-models"], ctx.env)
+    assert.equal(refreshed.code, 0, refreshed.stderr)
+
+    const opencodeConfig = readJson(ctx.paths.opencodeConfigFile)
+    assert.ok(opencodeConfig?.provider?.commandcode, "expected commandcode provider to be synced")
+    assert.ok(opencodeConfig?.provider?.ocg, "expected ocg alias to be synced")
+
+    const opencodeJsonc = readJson(`${ctx.paths.opencodeConfigFile}c`)
+    assert.deepStrictEqual(opencodeJsonc?.disabled_providers, ["other-provider"])
+  })
 })
 
 describe("ocg chat/completions integration", () => {

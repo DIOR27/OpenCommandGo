@@ -649,7 +649,7 @@ function buildCatalogOnlyCompatibilityEntry({ id, name, tags, context_length, ca
     image: {
       ok: typeof catalogCapabilities?.vision?.supported === "boolean"
         ? catalogCapabilities.vision.supported
-        : previous?.image?.ok ?? null,
+        : inheritImageOk(previous?.image),
       output_chars: previous?.image?.output_chars || 0,
       source: catalogCapabilities?.vision?.source || previous?.image?.source || null,
     },
@@ -665,6 +665,14 @@ function buildCatalogOnlyCompatibilityEntry({ id, name, tags, context_length, ca
     notes: ["Catálogo sincronizado sin probes de disponibilidad."],
     context_length: contextWindow,
   }
+}
+
+function inheritImageOk(previousImage) {
+  if (!previousImage || typeof previousImage !== "object") return null
+  if (typeof previousImage.ok !== "boolean") return null
+  const source = typeof previousImage.source === "string" ? previousImage.source : ""
+  if (source.includes("fallback_registry") || source.includes("fallback")) return null
+  return previousImage.ok
 }
 
 function normalizeCatalogVisionCapability(vision) {

@@ -22,13 +22,16 @@ import {
 } from "./cross-provider-capabilities.js"
 import { readResolvedProvidersFromSidecar } from "./sidecar-resolved-providers.js"
 
+const JSON_PARSE_FAILED = Symbol("json-parse-failed")
+
 export function detectOpenCodeInstallations() {
   const paths = getPaths()
+  const configFile = resolvePrimaryOpenCodeConfigFile(paths, { createIfMissing: false }) || paths.opencodeConfigFile
   return {
-    configFound: existsSync(paths.opencodeConfigFile),
+    configFound: hasAnyOpenCodeConfigFile(paths),
     desktop: detectDesktopPath(),
     cli: detectCliPath(),
-    configFile: paths.opencodeConfigFile,
+    configFile,
   }
 }
 
@@ -42,15 +45,21 @@ export async function syncOpenCodeConfig({
 } = {}) {
   const paths = getPaths()
   const secrets = readSecrets()
-  if (!existsSync(paths.opencodeConfigFile) && !createIfMissing) return null
-  ensureParentDir(paths.opencodeConfigFile)
-  const config = readJson(paths.opencodeConfigFile) || { $schema: "https://opencode.ai/config.json" }
+  const targetFile = resolvePrimaryOpenCodeConfigFile(paths, { createIfMissing })
+  if (!targetFile) return null
+  ensureParentDir(targetFile)
+  const config = readJson(targetFile, { parseFailureValue: JSON_PARSE_FAILED })
+  if (config === JSON_PARSE_FAILED) return targetFile
   const existingConfig = readOpenCodeConfigFor(paths)
   const runtimeProviders = await readComparableRuntimeProviders({ resolvedProviderMetadata, readResolvedProviders })
-  config.provider ||= {}
+  const previouslyConfiguredProviderIds = collectConfiguredProviderIds(paths)
+  const nextConfig = config || { $schema: "https://opencode.ai/config.json" }
+  nextConfig.provider ||= {}
+  const enabledProviderIds = new Set()
   for (const provider of providers) {
     if (!provider?.id || !provider?.compatibilityMatrix) continue
     const syncedIds = resolveSyncedProviderIds(provider)
+    for (const id of syncedIds) enabledProviderIds.add(id)
     const providerConfig = buildProviderConfig({ host, port, provider, token: secrets.shimAccessToken })
     if (provider.kind === "commandcode") {
       mergeCrossProviderCapabilities({
@@ -63,16 +72,18 @@ export async function syncOpenCodeConfig({
       })
     }
     for (const id of syncedIds) {
-      config.provider[id] = providerConfig
+      nextConfig.provider[id] = providerConfig
     }
   }
-  writeFileSync(paths.opencodeConfigFile, JSON.stringify(config, null, 2), "utf8")
-  return paths.opencodeConfigFile
+  stripDisabledProviders(nextConfig, enabledProviderIds, previouslyConfiguredProviderIds)
+  writeFileSync(targetFile, JSON.stringify(nextConfig, null, 2), "utf8")
+  syncDisabledProviderLists(paths, enabledProviderIds, targetFile, previouslyConfiguredProviderIds)
+  return targetFile
 }
 
 export function inspectOpenCodeProvider(providerId) {
   const paths = getPaths()
-  const config = readJson(paths.opencodeConfigFile)
+  const config = readJson(resolvePrimaryOpenCodeConfigFile(paths, { createIfMissing: false }) || paths.opencodeConfigFile)
   for (const candidate of resolveProviderLookupIds(providerId)) {
     if (config?.provider?.[candidate]) return config.provider[candidate]
   }
@@ -81,7 +92,9 @@ export function inspectOpenCodeProvider(providerId) {
 
 export function removeOpenCodeProvider(providerId) {
   const paths = getPaths()
-  const config = readJson(paths.opencodeConfigFile)
+  const targetFile = resolvePrimaryOpenCodeConfigFile(paths, { createIfMissing: false })
+  if (!targetFile) return false
+  const config = readJson(targetFile)
   if (!config?.provider) return false
   const providerIds = resolveProviderLookupIds(providerId)
   const removed = providerIds.some(candidate => config?.provider?.[candidate])
@@ -93,7 +106,7 @@ export function removeOpenCodeProvider(providerId) {
   if (providerIds.some(candidate => currentModel.startsWith(`${candidate}/`))) {
     delete config.model
   }
-  writeFileSync(paths.opencodeConfigFile, JSON.stringify(config, null, 2), "utf8")
+  writeFileSync(targetFile, JSON.stringify(config, null, 2), "utf8")
   return true
 }
 
@@ -264,13 +277,173 @@ function resolveCapabilitySource(compat, key) {
   return typeof source === "string" && source.trim() ? source.trim() : null
 }
 
-function readJson(file) {
+function readJson(file, { parseFailureValue = null } = {}) {
   if (!existsSync(file)) return null
   try {
-    return JSON.parse(readFileSync(file, "utf8"))
+    return parseJsonLike(readFileSync(file, "utf8"))
   } catch {
-    return null
+    return parseFailureValue
   }
+}
+
+function hasAnyOpenCodeConfigFile(paths) {
+  return getOpenCodeConfigCandidates(paths).some(file => existsSync(file))
+}
+
+function getOpenCodeConfigCandidates(paths) {
+  return [paths.opencodeConfigFile, `${paths.opencodeConfigFile}c`]
+}
+
+function resolvePrimaryOpenCodeConfigFile(paths, { createIfMissing = false } = {}) {
+  for (const file of getOpenCodeConfigCandidates(paths)) {
+    if (existsSync(file)) return file
+  }
+  return createIfMissing ? paths.opencodeConfigFile : null
+}
+
+function stripDisabledProviders(config, enabledProviderIds, previouslyConfiguredProviderIds = new Set()) {
+  if (!Array.isArray(config?.disabled_providers) || enabledProviderIds.size === 0) return
+  config.disabled_providers = config.disabled_providers.filter(id => {
+    const normalizedId = String(id || "").trim()
+    return !enabledProviderIds.has(normalizedId) || previouslyConfiguredProviderIds.has(normalizedId)
+  })
+  if (config.disabled_providers.length === 0) delete config.disabled_providers
+}
+
+function syncDisabledProviderLists(paths, enabledProviderIds, primaryFile, previouslyConfiguredProviderIds) {
+  if (enabledProviderIds.size === 0) return
+  for (const file of getOpenCodeConfigCandidates(paths)) {
+    if (!existsSync(file) || file === primaryFile) continue
+    const config = readJson(file)
+    if (!config) continue
+    const before = JSON.stringify(config.disabled_providers || null)
+    stripDisabledProviders(config, enabledProviderIds, previouslyConfiguredProviderIds)
+    const after = JSON.stringify(config.disabled_providers || null)
+    if (before !== after) {
+      writeFileSync(file, JSON.stringify(config, null, 2), "utf8")
+    }
+  }
+}
+
+function collectConfiguredProviderIds(paths) {
+  const configuredIds = new Set()
+  for (const file of getOpenCodeConfigCandidates(paths)) {
+    const config = readJson(file)
+    if (!config?.provider || typeof config.provider !== "object") continue
+    for (const id of Object.keys(config.provider)) {
+      const normalizedId = String(id || "").trim()
+      if (!normalizedId) continue
+      for (const candidate of resolveProviderLookupIds(normalizedId)) {
+        configuredIds.add(candidate)
+      }
+    }
+  }
+  return configuredIds
+}
+
+function parseJsonLike(raw) {
+  return JSON.parse(removeJsonTrailingCommas(stripJsonComments(raw)))
+}
+
+function stripJsonComments(raw) {
+  let result = ""
+  let inString = false
+  let escaping = false
+  let inLineComment = false
+  let inBlockComment = false
+
+  for (let index = 0; index < raw.length; index += 1) {
+    const char = raw[index]
+    const next = raw[index + 1]
+
+    if (inLineComment) {
+      if (char === "\n" || char === "\r") {
+        inLineComment = false
+        result += char
+      }
+      continue
+    }
+
+    if (inBlockComment) {
+      if (char === "*" && next === "/") {
+        inBlockComment = false
+        index += 1
+      }
+      continue
+    }
+
+    if (inString) {
+      result += char
+      if (escaping) {
+        escaping = false
+      } else if (char === "\\") {
+        escaping = true
+      } else if (char === '"') {
+        inString = false
+      }
+      continue
+    }
+
+    if (char === '"') {
+      inString = true
+      result += char
+      continue
+    }
+
+    if (char === "/" && next === "/") {
+      inLineComment = true
+      index += 1
+      continue
+    }
+
+    if (char === "/" && next === "*") {
+      inBlockComment = true
+      index += 1
+      continue
+    }
+
+    result += char
+  }
+
+  return result
+}
+
+function removeJsonTrailingCommas(raw) {
+  let result = ""
+  let inString = false
+  let escaping = false
+
+  for (let index = 0; index < raw.length; index += 1) {
+    const char = raw[index]
+
+    if (inString) {
+      result += char
+      if (escaping) {
+        escaping = false
+      } else if (char === "\\") {
+        escaping = true
+      } else if (char === '"') {
+        inString = false
+      }
+      continue
+    }
+
+    if (char === '"') {
+      inString = true
+      result += char
+      continue
+    }
+
+    if (char === ",") {
+      let nextIndex = index + 1
+      while (nextIndex < raw.length && /\s/.test(raw[nextIndex])) nextIndex += 1
+      if (raw[nextIndex] === "}" || raw[nextIndex] === "]") continue
+    }
+
+    result += char
+  }
+
+  return result
 }
 
 function detectDesktopPath() {

@@ -1,6 +1,6 @@
 import { afterEach, describe, it } from "node:test"
 import assert from "node:assert/strict"
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { inspectOpenCodeProvider, removeOpenCodeProvider, syncOpenCodeConfig } from "../src/opencode/config.js"
@@ -405,6 +405,80 @@ describe("syncOpenCodeConfig", () => {
       const model = readProvider(file).models["vendor/media-pro"]
       assert.equal(model.capabilities.video.supported, true)
       assert.equal(model.capabilities.video.source, "cross-provider-config:hyperbolic")
+    })
+  })
+
+  it("parses jsonc config with inline comments and trailing commas before syncing", async () => {
+    await withOpenCodeFixture(async root => {
+      const userProfile = join(root, "user")
+      const jsoncFile = join(userProfile, ".config", "opencode", "opencode.jsonc")
+      mkdirSync(join(userProfile, ".config", "opencode"), { recursive: true })
+      writeFileSync(jsoncFile, `{
+  // keep jsonc features
+  "$schema": "https://opencode.ai/config.json",
+  "theme": "dark", // inline comment
+  "provider": {
+    "other": {
+      "models": {},
+    },
+  },
+}
+`, "utf8")
+
+      await syncCommandCode({
+        models: {
+          "vendor/model": {
+            name: "Model",
+            status: "ok",
+            capabilities: {
+              vision: { supported: null, source: null },
+              pdf: { supported: null, source: null },
+              audio: { supported: null, source: null },
+              video: { supported: null, source: null },
+            },
+          },
+        },
+      })
+
+      const config = JSON.parse(readFileSync(jsoncFile, "utf8"))
+      assert.equal(config.theme, "dark")
+      assert.ok(config.provider.other)
+      assert.ok(config.provider.commandcode)
+    })
+  })
+
+  it("preserves intentionally disabled commandcode providers when they were already configured", async () => {
+    await withOpenCodeFixture(async root => {
+      const file = await seedExistingConfig(root, {
+        provider: {
+          commandcode: {
+            models: {
+              "vendor/model": {
+                modalities: { input: ["text"], output: ["text"] },
+              },
+            },
+          },
+        },
+        disabled_providers: ["commandcode", "ocg", "other-provider"],
+      })
+
+      await syncCommandCode({
+        models: {
+          "vendor/model": {
+            name: "Model",
+            status: "ok",
+            capabilities: {
+              vision: { supported: null, source: null },
+              pdf: { supported: null, source: null },
+              audio: { supported: null, source: null },
+              video: { supported: null, source: null },
+            },
+          },
+        },
+      })
+
+      const config = JSON.parse(readFileSync(file, "utf8"))
+      assert.deepStrictEqual(config.disabled_providers, ["commandcode", "ocg", "other-provider"])
     })
   })
 
