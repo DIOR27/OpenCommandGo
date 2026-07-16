@@ -2,6 +2,7 @@ import { describe, it } from "node:test"
 import assert from "node:assert/strict"
 import { comparableCommandCodeModel, resolveBridgeInputModalities, resolveFallbackModelHints } from "../src/shared/models.js"
 import { toCommandCodeMessages } from "../src/runtime/chat-bridge.js"
+import { buildCatalogOnlyCompatibilityEntry } from "../src/runtime/catalog-runtime.js"
 
 describe("xiaomi mimo capability separation", () => {
   it("mimo-v2-5-pro does not inherit vision/pdf from mimo-v2-5 family hint", () => {
@@ -59,5 +60,43 @@ describe("chat-bridge forwards image even for text-only catalog models", () => {
     const converted = toCommandCodeMessages(messages)
     assert.equal(converted.length, 1)
     assert.equal(typeof converted[0].content, "string")
+  })
+})
+
+describe("catalog refresh preserves probed vision", () => {
+  it("does not drop vision:true promoted by a --full probe", () => {
+    const previous = {
+      capabilities: {
+        vision: { supported: true, source: "probe" },
+      },
+    }
+    const entry = buildCatalogOnlyCompatibilityEntry({
+      id: "xiaomi/mimo-v2-5-pro",
+      name: "MiMo V2.5 Pro",
+      tags: [],
+      context_length: 200000,
+      catalogCapabilities: { vision: { supported: null, source: null } },
+      previous,
+    })
+    assert.equal(entry.capabilities.vision.supported, true, "probed vision must survive a catalog-only refresh")
+    assert.equal(entry.capabilities.vision.source, "probe")
+  })
+
+  it("does drop vision from a stale fallback_registry hint", () => {
+    const previous = {
+      image: { ok: true, source: "hint.vision.fallback_registry" },
+      capabilities: {
+        vision: { supported: true, source: "hint.vision.fallback_registry" },
+      },
+    }
+    const entry = buildCatalogOnlyCompatibilityEntry({
+      id: "xiaomi/mimo-v2-5-pro",
+      name: "MiMo V2.5 Pro",
+      tags: [],
+      context_length: 200000,
+      catalogCapabilities: { vision: { supported: null, source: null } },
+      previous,
+    })
+    assert.notEqual(entry.capabilities.vision.supported, true, "stale fallback vision must not survive")
   })
 })

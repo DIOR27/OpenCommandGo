@@ -638,8 +638,17 @@ function resolveRefreshConcurrency(value, probeMode, modelCount) {
   return Math.max(1, Math.min(normalized, Math.max(1, modelCount)))
 }
 
-function buildCatalogOnlyCompatibilityEntry({ id, name, tags, context_length, catalogCapabilities, previous }) {
+export function buildCatalogOnlyCompatibilityEntry({ id, name, tags, context_length, catalogCapabilities, previous }) {
   const contextWindow = resolveContextWindow(id, context_length)
+  const previousVision = previous?.capabilities?.vision
+  const previousVisionTrusted =
+    previousVision?.supported === true &&
+    typeof previousVision.source === "string" &&
+    !previousVision.source.includes("fallback")
+  const catalogVision = normalizeCatalogVisionCapability(catalogCapabilities?.vision)
+  const vision = previousVisionTrusted && catalogVision.supported !== false
+    ? { supported: true, source: previousVision.source }
+    : catalogVision
   return {
     name,
     tags: Array.isArray(tags) ? tags : (previous?.tags || []),
@@ -656,7 +665,7 @@ function buildCatalogOnlyCompatibilityEntry({ id, name, tags, context_length, ca
     reasoning: previous?.reasoning || { ok: null, chars: 0 },
     tools: previous?.tools || { ok: null, calls: 0 },
     capabilities: mergeCapabilities(previous?.capabilities, {
-      vision: normalizeCatalogVisionCapability(catalogCapabilities?.vision),
+      vision,
       pdf: normalizeCatalogFileCapability(catalogCapabilities?.pdf),
       audio: normalizeCatalogFileCapability(catalogCapabilities?.audio),
       video: normalizeCatalogFileCapability(catalogCapabilities?.video),
