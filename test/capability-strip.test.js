@@ -3,6 +3,7 @@ import assert from "node:assert/strict"
 import { comparableCommandCodeModel, resolveBridgeInputModalities, resolveFallbackModelHints } from "../src/shared/models.js"
 import { toCommandCodeMessages } from "../src/runtime/chat-bridge.js"
 import { buildCatalogOnlyCompatibilityEntry, createCatalogController } from "../src/runtime/catalog-runtime.js"
+import { buildCmdCatalogRows } from "../src/shared/commandcode-cmd-catalog.js"
 
 describe("xiaomi mimo capability separation", () => {
   it("mimo-v2-5-pro does not inherit vision/pdf from mimo-v2-5 family hint", () => {
@@ -22,6 +23,43 @@ describe("xiaomi mimo capability separation", () => {
 
   it("comparableCommandCodeModel normalizes dots and underscores", () => {
     assert.equal(comparableCommandCodeModel("xiaomi/mimo-v2.5-pro"), "xiaomi/mimo-v2-5-pro")
+  })
+
+  it("cmd catalog uses exact fallback hints for mimo-v2.5 when description omits vision", () => {
+    const [row] = buildCmdCatalogRows([
+      {
+        id: "xiaomi/mimo-v2.5",
+        name: "MiMo V2.5",
+        description: "Strong reasoning model with 200K context",
+        section: "Open Source",
+      },
+    ])
+
+    assert.equal(row.catalog_capabilities.vision.supported, true)
+    assert.equal(row.catalog_capabilities.vision.source, "hint.vision.fallback_registry")
+
+    const compat = buildCatalogOnlyCompatibilityEntry({
+      id: row.id,
+      name: row.name,
+      tags: row.tags,
+      context_length: row.context_length,
+      catalogCapabilities: row.catalog_capabilities,
+    })
+    assert.ok(resolveBridgeInputModalities(compat).includes("image"))
+  })
+
+  it("cmd catalog does not let mimo-v2.5-pro inherit base vision/pdf hints", () => {
+    const [row] = buildCmdCatalogRows([
+      {
+        id: "xiaomi/mimo-v2.5-pro",
+        name: "MiMo V2.5 Pro",
+        description: "Strong reasoning model with 200K context",
+        section: "Open Source",
+      },
+    ])
+
+    assert.equal(row.catalog_capabilities.vision.supported, null)
+    assert.equal(row.catalog_capabilities.pdf.supported, null)
   })
 })
 

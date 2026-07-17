@@ -2,7 +2,7 @@ import { execFile, execFileSync } from "node:child_process"
 import { accessSync, constants } from "node:fs"
 import { join } from "node:path"
 import { resolveContextWindow } from "./context-windows.js"
-import { FALLBACK_MODEL_REGISTRY } from "./models.js"
+import { FALLBACK_MODEL_REGISTRY, resolveFallbackModelHints } from "./models.js"
 
 // Lookup map for display names from fallback registry
 const REGISTRY_NAME_LOOKUP = new Map(
@@ -228,6 +228,8 @@ export function buildCmdCatalogRows(parsedModels, { filterSection } = {}) {
 
   return filtered.map(model => {
     const capabilities = inferCmdDescriptionCapabilities(model.description, model.id)
+    const fallbackHints = resolveFallbackModelHints(model.id)
+    applyFallbackHints(capabilities, fallbackHints)
 
     // Priority: 1) registry name, 2) formatted from id, 3) raw id
     const displayName = REGISTRY_NAME_LOOKUP.get(model.id.toLowerCase()) || formatCmdModelName(model.id) || model.id
@@ -245,6 +247,19 @@ export function buildCmdCatalogRows(parsedModels, { filterSection } = {}) {
       catalog_capabilities: capabilities,
     }
   })
+}
+
+function applyFallbackHints(capabilities, hints) {
+  for (const key of ["vision", "pdf", "audio", "video"]) {
+    if (capabilities[key]?.supported == null && hints.capabilities?.[key] === true) {
+      capabilities[key] = { supported: true, source: `hint.${key}.fallback_registry` }
+    }
+  }
+  if (capabilities.reasoning?.supported == null && hints.reasoning === true) {
+    capabilities.reasoning = { supported: true, source: "hint.reasoning.fallback_registry" }
+    capabilities.hasReasoning = true
+  }
+  capabilities.hasImage = capabilities.vision?.supported === true
 }
 
 /**

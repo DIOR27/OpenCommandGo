@@ -13,6 +13,27 @@ const messages = {
 
     "setup.config_saved": "Config saved at: {0}",
     "setup.secrets_saved": "Secrets saved at: {0}",
+    "setup.docs_models": "Command Code Documentation lists {0} model categories.",
+
+    // -- Docs models --
+
+    "docs.fetching": "Fetching model catalog from Command Code documentation...",
+    "docs.found": "Found {0} model categories:",
+    "docs.error": "Could not fetch docs: {0}",
+
+    // -- Edit models --
+    "edit.no_models": "No models in catalog. Run --refresh-models first.",
+    "edit.no_tty": "This command requires an interactive terminal.",
+    "edit.header": "----- MODELS -----",
+    "edit.prompt": "Model to edit (or Enter to exit): ",
+    "edit.model_header": "----- {0} -----",
+    "edit.back": "Back",
+    "edit.cap_prompt": "capability on/off (or Enter to go back): ",
+    "edit.invalid": "Expected: capability on/off. Example: vision on",
+    "edit.invalid_cap": "Valid capabilities: vision pdf audio video reasoning",
+    "edit.invalid_val": "Use 'on' or 'off'",
+    "edit.synced": "OpenCode config re-synced with manual overrides.",
+    "edit.sync_failed": "Could not re-sync OpenCode config. Run --refresh-models later.",
 
     // -- Start --
     "start.refreshing": "Refreshing model catalog...",
@@ -121,6 +142,8 @@ Flags:
     --probe, --verify       Fast probe
     --yes                   Skip confirmation
     --show-models           List models after refresh
+  --docs-models           Fetch model list from docs
+  --edit-models           Interactively edit model capabilities
   --setup                 Interactive setup
   --set-api-key           Update API key
   --reset                 Reset config
@@ -164,6 +187,26 @@ Flags:
     "setup.not_detected": "OpenCode no está detectado todavía. Guardé la config de OpenCommandGo igual.",
     "setup.config_saved": "Config guardada en: {0}",
     "setup.secrets_saved": "Secretos guardados en: {0}",
+    "setup.docs_models": "La documentación de Command Code lista {0} categorías de modelos.",
+
+    // -- Docs models --
+    "docs.fetching": "Obteniendo catálogo de modelos desde la documentación de Command Code...",
+    "docs.found": "Se encontraron {0} categorías de modelos:",
+    "docs.error": "No se pudo obtener la documentación: {0}",
+
+    // -- Edit models --
+    "edit.no_models": "No hay modelos en el catálogo. Ejecutá --refresh-models primero.",
+    "edit.no_tty": "Este comando requiere una terminal interactiva.",
+    "edit.header": "----- MODELOS -----",
+    "edit.prompt": "Modelo a editar (o Enter para salir): ",
+    "edit.model_header": "----- {0} -----",
+    "edit.back": "Volver",
+    "edit.cap_prompt": "capacidad on/off (o Enter para volver): ",
+    "edit.invalid": "Se esperaba: capacidad on/off. Ejemplo: vision on",
+    "edit.invalid_cap": "Capacidades válidas: vision pdf audio video reasoning",
+    "edit.invalid_val": "Usá 'on' o 'off'",
+    "edit.synced": "Config de OpenCode resincronizada con overrides manuales.",
+    "edit.sync_failed": "No se pudo resincronizar OpenCode. Ejecutá --refresh-models después.",
 
     // -- Start --
     "start.refreshing": "Refrescando catálogo de modelos...",
@@ -272,6 +315,8 @@ Flags:
     --probe, --verify       Probe rápido
     --yes                   Saltar confirmación
     --show-models           Listar modelos después del refresh
+  --docs-models           Obtener lista de modelos desde la documentación
+  --edit-models           Editar capacidades de modelos interactivamente
   --setup                 Configuración interactiva
   --set-api-key           Cambiar API key
   --reset                 Resetear config

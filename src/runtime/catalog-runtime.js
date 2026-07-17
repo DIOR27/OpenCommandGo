@@ -1,4 +1,5 @@
 import { syncOpenCodeConfig } from "../opencode/config.js"
+import { applyManualOverrides } from "../config/manual-capabilities.js"
 import { deriveCatalogFromCompatibility, extractModelRows, fallbackCatalog, normalizeCatalogRows } from "../shared/catalog.js"
 import { supportsCommandCodeReasoning } from "../shared/commandcode-thinking.js"
 import { resolveContextWindow } from "../shared/context-windows.js"
@@ -127,6 +128,7 @@ export function createCatalogController({ initialCompatibilityMatrix, writeCompa
         compatibilityMatrix = next
         availableCatalog = deriveCatalogFromCompatibility(compatibilityMatrix)
         writeCompatibilityMatrix(compatibilityMatrix)
+        applyManualOverrides(compatibilityMatrix.models)
         await syncOpenCodeConfig({
           host: settings.host,
           port: settings.port,
@@ -213,6 +215,7 @@ export function createCatalogController({ initialCompatibilityMatrix, writeCompa
       compatibilityMatrix = next
       availableCatalog = deriveCatalogFromCompatibility(compatibilityMatrix)
       writeCompatibilityMatrix(compatibilityMatrix)
+      applyManualOverrides(compatibilityMatrix.models)
       await syncOpenCodeConfig({
         host: settings.host,
         port: settings.port,

@@ -22,6 +22,8 @@ const flags = {
   probe:        args.includes("--probe") || args.includes("--verify"),
   yes:          args.includes("--yes"),
   showModels:   args.includes("--show-models"),
+  docsModels:   args.includes("--docs-models"),
+  editModels:   args.includes("--edit-models"),
   // log flags
   watchdog:     args.includes("--watchdog"),
   follow:       args.includes("-f") || args.includes("--follow"),
@@ -72,6 +74,10 @@ if (flags.help) {
   await runCli(["reset"])
 } else if (flags.uninstall) {
   await runCli(["uninstall"])
+} else if (flags.editModels) {
+  await runCli(["edit-models"])
+} else if (flags.docsModels) {
+  await runCli(["docs-models", ...buildRest(["--docs-models"])])
 } else {
   // Default: start (foreground). --background goes through as rest arg.
   const startArgs = buildRest(["--start", "--serve", "--background"])

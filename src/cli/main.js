@@ -10,6 +10,9 @@ import { refreshModelCatalogNow, startServer } from "../runtime/server.js"
 import { getLocale, t } from "../shared/i18n.js"
 import { COMMANDCODE_PROVIDER } from "../shared/models.js"
 import { getFreeModelsFromCmd } from "../shared/commandcode-cmd-catalog.js"
+import { fetchDocsModels } from "../shared/fetch-docs-models.js"
+import { readManualCapabilities, setManualCapability, getModelOverrides } from "../config/manual-capabilities.js"
+import { bold } from "../shared/color.js"
 import { findPidByPort, gracefulKill, isProcessAlive, sleep } from "../shared/process-utils.js"
 
 export async function runCli(args) {
@@ -48,6 +51,12 @@ export async function runCli(args) {
       return
     case "uninstall":
       await uninstallCommand()
+      return
+    case "docs-models":
+      await docsModelsCommand()
+      return
+    case "edit-models":
+      await editModelsCommand()
       return
     case "help":
     default:
@@ -114,6 +123,16 @@ async function runSetup() {
 
     console.log(t("setup.config_saved", getPaths().configFile))
     console.log(t("setup.secrets_saved", getPaths().secretsFile))
+
+    // Optional: show docs model list
+    console.log("")
+    try {
+      const data = await fetchDocsModels()
+      const sectionCount = Object.keys(data).length
+      console.log(t("setup.docs_models", sectionCount))
+    } catch {
+      // Non-critical
+    }
   } finally {
     rl.close()
   }
@@ -643,6 +662,140 @@ async function uninstallCommand() {
   console.log(t(removedProvider ? "uninstall.provider_removed" : "uninstall.provider_not_found"))
   console.log(t("uninstall.data_deleted", dataDir))
   console.log(t("uninstall.done"))
+}
+
+async function docsModelsCommand() {
+  console.log(t("docs.fetching"))
+  try {
+    const data = await fetchDocsModels()
+    const sections = Object.keys(data)
+    console.log(t("docs.found", sections.length))
+    for (const section of sections) {
+      console.log(`\n${bold(section)}`)
+      for (const m of data[section]) {
+        const caps = m.capabilities ? `  [${m.capabilities}]` : ""
+        console.log(`  ${m.model_id}  ${m.name}${caps}`)
+      }
+    }
+  } catch (e) {
+    console.log(t("docs.error", e.message))
+  }
+}
+
+const CAP_NAMES = ["vision", "pdf", "audio", "video", "reasoning"]
+const CAP_TOGGLE_CHARS = { true: "\u25A3", false: "\u25A1" } // ▣ □
+const CAP_DISPLAY = { true: "\u25A3", false: "\u25A1", null: "\u25A1", undefined: "\u25A1" } // unknown → □
+
+async function editModelsCommand() {
+  if (!stdin.isTTY) {
+    console.log(t("edit.no_tty"))
+    return
+  }
+
+  const matrix = readCompatibilityMatrix("commandcode")
+  const catalog = matrix?.models || {}
+  const modelIds = Object.keys(catalog).sort()
+
+  if (modelIds.length === 0) {
+    console.log(t("edit.no_models"))
+    return
+  }
+
+  const rl = createInterface({ input: stdin, output: stdout })
+  try {
+    while (true) {
+      // Print model list
+      console.log(bold(t("edit.header")))
+      for (let i = 0; i < modelIds.length; i++) {
+        const name = catalog[modelIds[i]]?.name || modelIds[i]
+        console.log(`  ${i + 1}. ${name}`)
+      }
+      const answer = await rl.question(t("edit.prompt")).catch(() => "")
+      const idx = parseInt(answer, 10) - 1
+      if (Number.isNaN(idx) || idx < 0 || idx >= modelIds.length) break
+
+      const modelId = modelIds[idx]
+      const displayName = catalog[modelId]?.name || modelId
+      const overrides = getModelOverrides(modelId)
+      const compat = catalog[modelId]
+      const currentCaps = compat?.capabilities || {}
+
+      // Edit loop
+      while (true) {
+        console.log(`\n${bold(t("edit.model_header", displayName))}`)
+        const lines = []
+        for (const cap of CAP_NAMES) {
+          const override = overrides[cap]
+          const actual = override ?? currentCaps[cap]?.supported ?? null
+          const ch = CAP_DISPLAY[String(actual)] ?? "?"
+          lines.push(`  ${cap}: ${ch} ${override !== undefined ? "(manual)" : ""}`)
+        }
+        console.log(lines.join("\n"))
+        console.log(`  ${bold(t("edit.back"))}`)
+
+        const cmd = (await rl.question(t("edit.cap_prompt")).catch(() => "")).trim().toLowerCase()
+        if (!cmd || cmd === "b" || cmd === "back") break
+
+        const parts = cmd.split(/\s+/)
+        if (parts.length !== 2) {
+          console.log(t("edit.invalid"))
+          continue
+        }
+        const capName = parts[0]
+        const val = parts[1]
+        if (!CAP_NAMES.includes(capName)) {
+          console.log(t("edit.invalid_cap"))
+          continue
+        }
+        if (val !== "on" && val !== "off") {
+          console.log(t("edit.invalid_val"))
+          continue
+        }
+        const boolVal = val === "on"
+        const currentOverride = overrides[capName]
+        if (currentOverride === undefined) {
+          // No override yet: set it
+          setManualCapability(modelId, capName, boolVal)
+        } else if (currentOverride === boolVal) {
+          // Override matches current: remove it (revert to catalog)
+          setManualCapability(modelId, capName, null)
+        } else {
+          // Override differs: update it
+          setManualCapability(modelId, capName, boolVal)
+        }
+        // Refresh overrides
+        overrides[capName] = getModelOverrides(modelId)[capName]
+      }
+    }
+    // Re-sync OpenCode config if shim is running
+    const settings = getRuntimeSettings()
+    if (settings) {
+      try {
+        const { syncOpenCodeConfig } = await import("../opencode/config.js")
+        const { COMMANDCODE_PROVIDER } = await import("../shared/models.js")
+        // Re-read matrix with overrides applied
+        const updatedMatrix = readCompatibilityMatrix("commandcode")
+        await syncOpenCodeConfig({
+          host: settings.host,
+          port: settings.port,
+          providers: [{
+            id: settings.providerId,
+            kind: "commandcode",
+            routePrefix: COMMANDCODE_PROVIDER.routePrefix,
+            name: COMMANDCODE_PROVIDER.name,
+            compatibilityMatrix: updatedMatrix,
+          }],
+          createIfMissing: true,
+        })
+        console.log(t("edit.synced"))
+      } catch {
+        // Non-critical; user can refresh later
+        console.log(t("edit.sync_failed"))
+      }
+    }
+  } finally {
+    rl.close()
+  }
 }
 
 function printHelp() {
