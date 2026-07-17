@@ -747,80 +747,132 @@ async function editModelsCommand() {
     return
   }
 
-  const rl = createInterface({ input: stdin, output: stdout })
-  try {
-    while (true) {
-      // Print model list
-      console.log(bold(t("edit.header")))
-      for (let i = 0; i < modelIds.length; i++) {
-        const name = catalog[modelIds[i]]?.name || modelIds[i]
-        console.log(`  ${i + 1}. ${name}`)
+  let changed = false
+  let cursor = 0
+  let state = "models" // "models" | "capabilities"
+  let currentModelId = null
+  let currentDisplayName = null
+
+  // ANSI
+  const CLEAR = "\x1b[2J\x1b[H"
+  const BOLD = "\x1b[1m"
+  const DIM = "\x1b[2m"
+  const RESET = "\x1b[0m"
+  const INVERT = "\x1b[7m"
+  const CURSOR_CH = "\u25B6"
+
+  function getModelItems() {
+    return modelIds.map((id) => {
+      const name = catalog[id]?.name || id
+      const overrides = getModelOverrides(id)
+      const hasManual = Object.keys(overrides).length > 0
+      return `${name}${hasManual ? "  (manual)" : ""}`
+    })
+  }
+
+  function getCapabilityItems() {
+    if (!currentModelId) return []
+    const overrides = getModelOverrides(currentModelId)
+    const currentCaps = catalog[currentModelId]?.capabilities || {}
+    return CAP_NAMES.map((cap) => {
+      const override = overrides[cap]
+      const actual = override ?? currentCaps[cap]?.supported ?? null
+      const ch = CAP_DISPLAY[String(actual)] ?? "?"
+      const label = actual ? `${BOLD}${cap}: ${ch}${RESET}` : `${DIM}${cap}: ${ch}${RESET}`
+      const tag = override !== undefined ? " (manual)" : ""
+      return `${label}${tag}`
+    })
+  }
+
+  function render() {
+    process.stdout.write(CLEAR)
+    if (state === "models") {
+      process.stdout.write(`${BOLD}${t("edit.header")}${RESET}\n\n`)
+      const items = getModelItems()
+      for (let i = 0; i < items.length; i++) {
+        const prefix = i === cursor ? `${INVERT} ${CURSOR_CH} ${RESET}` : "   "
+        process.stdout.write(`${prefix}${items[i]}\n`)
       }
-      const answer = await rl.question(t("edit.prompt")).catch(() => "")
-      const idx = parseInt(answer, 10) - 1
-      if (Number.isNaN(idx) || idx < 0 || idx >= modelIds.length) break
-
-      const modelId = modelIds[idx]
-      const displayName = catalog[modelId]?.name || modelId
-      const overrides = getModelOverrides(modelId)
-      const compat = catalog[modelId]
-      const currentCaps = compat?.capabilities || {}
-
-      // Edit loop
-      while (true) {
-        console.log(`\n${bold(t("edit.model_header", displayName))}`)
-        const lines = []
-        for (const cap of CAP_NAMES) {
-          const override = overrides[cap]
-          const actual = override ?? currentCaps[cap]?.supported ?? null
-          const ch = CAP_DISPLAY[String(actual)] ?? "?"
-          lines.push(`  ${cap}: ${ch} ${override !== undefined ? "(manual)" : ""}`)
-        }
-        console.log(lines.join("\n"))
-        console.log(`  ${bold(t("edit.back"))}`)
-
-        const cmd = (await rl.question(t("edit.cap_prompt")).catch(() => "")).trim().toLowerCase()
-        if (!cmd || cmd === "b" || cmd === "back") break
-
-        const parts = cmd.split(/\s+/)
-        if (parts.length !== 2) {
-          console.log(t("edit.invalid"))
-          continue
-        }
-        const capName = parts[0]
-        const val = parts[1]
-        if (!CAP_NAMES.includes(capName)) {
-          console.log(t("edit.invalid_cap"))
-          continue
-        }
-        if (val !== "on" && val !== "off") {
-          console.log(t("edit.invalid_val"))
-          continue
-        }
-        const boolVal = val === "on"
-        const currentOverride = overrides[capName]
-        if (currentOverride === undefined) {
-          // No override yet: set it
-          setManualCapability(modelId, capName, boolVal)
-        } else if (currentOverride === boolVal) {
-          // Override matches current: remove it (revert to catalog)
-          setManualCapability(modelId, capName, null)
-        } else {
-          // Override differs: update it
-          setManualCapability(modelId, capName, boolVal)
-        }
-        // Refresh overrides
-        overrides[capName] = getModelOverrides(modelId)[capName]
+      process.stdout.write(`\n${DIM}↑↓ navigate  Enter select  Esc exit${RESET}`)
+    } else {
+      process.stdout.write(`${BOLD}----- ${currentDisplayName} -----${RESET}\n\n`)
+      const items = getCapabilityItems()
+      for (let i = 0; i < items.length; i++) {
+        const prefix = i === cursor ? `${INVERT} ${CURSOR_CH} ${RESET}` : "   "
+        process.stdout.write(`${prefix}${items[i]}\n`)
       }
+      process.stdout.write(`\n${DIM}↑↓ navigate  Enter toggle  Esc back${RESET}`)
     }
-    // Re-sync OpenCode config if shim is running
+  }
+
+  function cleanup() {
+    process.stdin.setRawMode(false)
+    process.stdin.pause()
+    process.stdin.removeAllListeners("data")
+  }
+
+  await new Promise((resolve) => {
+    process.stdin.setRawMode(true)
+    process.stdin.resume()
+    process.stdin.setEncoding("utf8")
+
+    process.stdin.on("data", (key) => {
+      const items = state === "models" ? getModelItems() : getCapabilityItems()
+
+      if (key === "\u001b[A") { // Up
+        cursor = (cursor - 1 + items.length) % items.length
+        render()
+      } else if (key === "\u001b[B") { // Down
+        cursor = (cursor + 1) % items.length
+        render()
+      } else if (key === "\r" || key === "\n") { // Enter
+        if (state === "models") {
+          currentModelId = modelIds[cursor]
+          currentDisplayName = catalog[currentModelId]?.name || currentModelId
+          state = "capabilities"
+          cursor = 0
+        } else {
+          // Toggle capability
+          const capName = CAP_NAMES[cursor]
+          const overrides = getModelOverrides(currentModelId)
+          const currentCaps = catalog[currentModelId]?.capabilities || {}
+          const currentOverride = overrides[capName]
+          const currentActual = currentOverride ?? currentCaps[capName]?.supported ?? null
+
+          if (currentOverride === undefined) {
+            setManualCapability(currentModelId, capName, !currentActual)
+          } else if (currentOverride === !currentActual) {
+            setManualCapability(currentModelId, capName, null)
+          } else {
+            setManualCapability(currentModelId, capName, !currentOverride)
+          }
+          changed = true
+        }
+        render()
+      } else if (key === "\u001b" || key === "q") { // Esc or q
+        if (state === "capabilities") {
+          state = "models"
+          cursor = 0
+          render()
+        } else {
+          cleanup()
+          resolve()
+        }
+      }
+    })
+
+    render()
+  })
+
+  // Re-sync OpenCode config if shim is running and changes were made
+  if (changed) {
     const settings = getRuntimeSettings()
     if (settings) {
       try {
         const { syncOpenCodeConfig } = await import("../opencode/config.js")
         const { COMMANDCODE_PROVIDER } = await import("../shared/models.js")
-        // Re-read matrix with overrides applied
         const updatedMatrix = readCompatibilityMatrix("commandcode")
+        applyManualOverrides(updatedMatrix.models)
         await syncOpenCodeConfig({
           host: settings.host,
           port: settings.port,
@@ -835,12 +887,9 @@ async function editModelsCommand() {
         })
         console.log(t("edit.synced"))
       } catch {
-        // Non-critical; user can refresh later
         console.log(t("edit.sync_failed"))
       }
     }
-  } finally {
-    rl.close()
   }
 }
 
