@@ -135,16 +135,26 @@ export async function startServer() {
         }
 
         const compat = compatibilityMatrix?.models?.[model]
-        if (!resolveBridgeInputModalities(compat).includes("image") && requestHasImage(body.messages)) {
+        const imageInRequest = requestHasImage(body.messages)
+        if (!resolveBridgeInputModalities(compat).includes("image") && imageInRequest) {
           log(`REQUEST image forwarded model=${model} note=text_only_in_catalog_may_still_accept`)
         }
 
         if (body.stream === true) {
           const upstream = await startCommandCodeAlphaStream(body, model, settings, { log })
+          // upstream accepted image (200 OK), promote vision if not already
+          if (!resolveBridgeInputModalities(compat).includes("image") && imageInRequest) {
+            commandCodeCatalogController.promoteModelVision(model, settings)
+              .catch(err => log(`UPGRADE error=${err.message} model=${model}`))
+          }
           return streamOpenAIResponse(res, model, upstream, { log })
         }
 
         const upstream = await callCommandCodeAlpha(body, model, settings, { log })
+        if (!resolveBridgeInputModalities(compat).includes("image") && imageInRequest) {
+          commandCodeCatalogController.promoteModelVision(model, settings)
+            .catch(err => log(`UPGRADE error=${err.message} model=${model}`))
+        }
         return json(res, 200, buildOpenAICompletion(model, upstream))
       }
 

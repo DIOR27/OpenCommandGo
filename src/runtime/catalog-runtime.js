@@ -36,6 +36,28 @@ export function createCatalogController({ initialCompatibilityMatrix, writeCompa
         createIfMissing: true,
       })
     },
+    async promoteModelVision(modelId, settings) {
+      let mutated = false
+      const entry = compatibilityMatrix?.models?.[modelId]
+      if (!entry) return false
+
+      if (!entry.capabilities?.vision?.supported) {
+        if (!entry.image) entry.image = { ok: false, output_chars: 0, source: null }
+        entry.image.ok = true
+        entry.image.source = "runtime_upgrade"
+        if (!entry.capabilities) entry.capabilities = {}
+        entry.capabilities.vision = { supported: true, source: "runtime_upgrade" }
+        mutated = true
+      }
+
+      if (!mutated) return false
+
+      writeCompatibilityMatrix(compatibilityMatrix)
+      availableCatalog = deriveCatalogFromCompatibility(compatibilityMatrix)
+      await this.syncProviderConfig(settings)
+      log(`MODEL_UPGRADE model=${modelId} action=promote_vision source=runtime_upgrade`)
+      return true
+    },
     async refreshNow(settings, options = {}) {
       const refreshMs = settings.compatibilityRefreshHours * 60 * 60 * 1000
       return await maybeRefreshCompatibility("manual", refreshMs, settings, {

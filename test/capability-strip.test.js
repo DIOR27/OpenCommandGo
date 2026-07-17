@@ -2,7 +2,7 @@ import { describe, it } from "node:test"
 import assert from "node:assert/strict"
 import { comparableCommandCodeModel, resolveBridgeInputModalities, resolveFallbackModelHints } from "../src/shared/models.js"
 import { toCommandCodeMessages } from "../src/runtime/chat-bridge.js"
-import { buildCatalogOnlyCompatibilityEntry } from "../src/runtime/catalog-runtime.js"
+import { buildCatalogOnlyCompatibilityEntry, createCatalogController } from "../src/runtime/catalog-runtime.js"
 
 describe("xiaomi mimo capability separation", () => {
   it("mimo-v2-5-pro does not inherit vision/pdf from mimo-v2-5 family hint", () => {
@@ -98,5 +98,116 @@ describe("catalog refresh preserves probed vision", () => {
       previous,
     })
     assert.notEqual(entry.capabilities.vision.supported, true, "stale fallback vision must not survive")
+  })
+})
+
+describe("runtime vision upgrade (promoteModelVision)", () => {
+  it("promotes vision for a text-only model after a successful image request", async () => {
+    const matrix = {
+      updated_at: new Date().toISOString(),
+      refresh_interval_hours: 24,
+      models: {
+        "some/text-model": {
+          name: "Text Only",
+          status: "catalog_only",
+          image: { ok: false, output_chars: 0, source: null },
+          capabilities: { vision: { supported: false, source: "catalog" } },
+        },
+      },
+    }
+    let writtenMatrix = null
+    let syncCalled = false
+
+    const controller = createCatalogController({
+      initialCompatibilityMatrix: matrix,
+      writeCompatibilityMatrix: m => { writtenMatrix = m },
+      log: () => {},
+    })
+    // stub syncProviderConfig to avoid disk I/O
+    controller.syncProviderConfig = async () => { syncCalled = true }
+
+    const promoted = await controller.promoteModelVision("some/text-model", {})
+    assert.equal(promoted, true, "should report promotion happened")
+
+    // verify in-memory matrix
+    const entry = controller.getCompatibilityMatrix().models["some/text-model"]
+    assert.equal(entry.capabilities.vision.supported, true, "vision should be promoted in capabilities")
+    assert.equal(entry.capabilities.vision.source, "runtime_upgrade")
+    assert.equal(entry.image.ok, true, "image.ok should be true")
+    assert.equal(entry.image.source, "runtime_upgrade")
+
+    // verify persisted to disk
+    assert.notEqual(writtenMatrix, null, "writeCompatibilityMatrix should have been called")
+    assert.equal(writtenMatrix.models["some/text-model"].capabilities.vision.supported, true)
+
+    // verify OpenCode sync was triggered
+    assert.equal(syncCalled, true, "syncProviderConfig should be called")
+  })
+
+  it("is idempotent — second call returns false and does not re-write", async () => {
+    const matrix = {
+      updated_at: new Date().toISOString(),
+      refresh_interval_hours: 24,
+      models: {
+        "some/text-model": {
+          name: "Text Only",
+          status: "catalog_only",
+          image: { ok: false, output_chars: 0, source: null },
+          capabilities: { vision: { supported: false, source: "catalog" } },
+        },
+      },
+    }
+    let writeCount = 0
+
+    const controller = createCatalogController({
+      initialCompatibilityMatrix: matrix,
+      writeCompatibilityMatrix: () => { writeCount++ },
+      log: () => {},
+    })
+    controller.syncProviderConfig = async () => {}
+
+    await controller.promoteModelVision("some/text-model", {})
+    assert.equal(writeCount, 1, "first call writes once")
+
+    const second = await controller.promoteModelVision("some/text-model", {})
+    assert.equal(second, false, "second call should report no promotion")
+    assert.equal(writeCount, 1, "second call should not write again (idempotent)")
+  })
+
+  it("does nothing for unknown models", async () => {
+    let writeCalled = false
+    const controller = createCatalogController({
+      initialCompatibilityMatrix: {
+        updated_at: new Date().toISOString(),
+        refresh_interval_hours: 24,
+        models: {},
+      },
+      writeCompatibilityMatrix: () => { writeCalled = true },
+      log: () => {},
+    })
+    controller.syncProviderConfig = async () => {}
+
+    const result = await controller.promoteModelVision("nonexistent", {})
+    assert.equal(result, false)
+    assert.equal(writeCalled, false, "no write for unknown model")
+  })
+
+  it("runtime_upgrade source survives a catalog-only refresh", () => {
+    const previous = {
+      image: { ok: true, output_chars: 0, source: "runtime_upgrade" },
+      capabilities: {
+        vision: { supported: true, source: "runtime_upgrade" },
+      },
+    }
+    const entry = buildCatalogOnlyCompatibilityEntry({
+      id: "some/text-model",
+      name: "Text Model",
+      tags: [],
+      context_length: 128000,
+      catalogCapabilities: { vision: { supported: null, source: null } },
+      previous,
+    })
+    assert.equal(entry.capabilities.vision.supported, true, "runtime_upgrade should survive catalog refresh")
+    assert.equal(entry.capabilities.vision.source, "runtime_upgrade")
   })
 })
