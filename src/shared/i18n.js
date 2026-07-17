@@ -7,11 +7,10 @@ const messages = {
     "setup.opencode.cli": "OpenCode CLI: {0}",
     "setup.api_key.prompt": "Command Code API key{0}: ",
     "setup.port.prompt": "OpenCommandGo port [{0}]: ",
-    "setup.autostart.prompt": "Enable autostart on login? [Y/n]: ",
+
     "setup.synced": "OpenCode configured at: {0}",
     "setup.not_detected": "OpenCode not detected yet. Config saved anyway.",
-    "setup.autostart.enabled": "Autostart enabled.",
-    "setup.autostart.disabled": "Autostart disabled.",
+
     "setup.config_saved": "Config saved at: {0}",
     "setup.secrets_saved": "Secrets saved at: {0}",
 
@@ -55,8 +54,7 @@ const messages = {
     "status.no": "no",
     "status.desktop_detected": "Desktop detected: {0}",
     "status.cli_detected": "CLI detected: {0}",
-    "status.autostart_enabled": "Autostart enabled: {0}",
-    "status.autostart_provider": "Autostart provider: {0}",
+
     "status.models_count": "Useful models in catalog: {0}",
 
     // -- Doctor --
@@ -79,8 +77,7 @@ const messages = {
     "doctor.cli": "CLI detected: {0}",
     "doctor.compat_matrix": "Compat matrix: {0}",
     "doctor.catalog_age": "Catalog updated: {0}",
-    "doctor.autostart": "Autostart configured: {0}",
-    "doctor.autostart_provider": "Autostart provider: {0}",
+
     "doctor.watchdog": "Watchdog: {0}",
     "doctor.watchdog_active": "active",
     "doctor.watchdog_inactive": "inactive",
@@ -102,7 +99,7 @@ const messages = {
 
     // -- Errors --
     "error.required": "This value is required.",
-    "error.missing_api_key": "Missing API key. Run: ocg setup or ocg set-api-key",
+    "error.missing_api_key": "Missing API key. Run: node shim.js --setup",
     "error.host_not_allowed": "Host not allowed for local use: {0}. Use 127.0.0.1 or localhost.",
     "error.upstream": "Command Code responded {0}: {1}",
     "error.upstream_no_body": "Command Code did not return a streaming body",
@@ -110,53 +107,36 @@ const messages = {
     "error.upstream_models": "models {0}",
 
     // -- Help --
-    "help.text": `${bold("ocg")}
+    "help.text": `${bold("shim.js")}
 
-Commands:
-  setup
-  start [--background]
-  serve
-  stop
-  logs [--lines N] [--follow|-f]
-  enable-autostart
-  disable-autostart
-  autostart-status
-  autostart <enable|disable|status>
-  status
-  doctor
-  refresh-models [--probe|--full] [--provider NAME] [--parallel N] [--yes]
-  set-api-key
-  reset
-  uninstall`,
-
-    // -- Autostart --
-    "autostart.enabled": "Autostart enabled.",
-    "autostart.disabled": "Autostart disabled.",
-    "autostart.provider": "Provider: {0}",
-    "autostart.command": "Command: ocg start --background",
-    "autostart.status": "Autostart: {0}",
-    "autostart.enabled_label": "enabled",
-    "autostart.disabled_label": "disabled",
-    "autostart.status_provider": "Provider: {0}",
-    "autostart.mode": "Mode: {0}",
-    "autostart.command_line": "Command: {0}",
-    "autostart.sync_yes": "Config synced: {0}",
-    "autostart.sync_no": "Config synced: {0}",
-    "autostart.usage": "Usage: ocg autostart <enable|disable|status>",
+Flags:
+  --start                 Start server (default action)
+  --background            Start in background
+  --stop, --shutdown      Stop server
+  --status                Show status
+  --doctor                Run diagnostics
+  --logs, --log           Show logs (add --follow, --watchdog, --lines N)
+  --refresh-models        Refresh catalog
+    --full                  Full probe (tests each model)
+    --probe, --verify       Fast probe
+    --yes                   Skip confirmation
+    --show-models           List models after refresh
+  --setup                 Interactive setup
+  --set-api-key           Update API key
+  --reset                 Reset config
+  --uninstall             Remove all data
+  --help, -h              Show this help`,
 
     // -- Uninstall --
     "reset.nothing": "Config and secrets already at defaults. Nothing to reset.",
     "reset.done": "OpenCommandGo config reset:",
     "reset.deleted": "Deleted: {0}",
-    "reset.regenerate": "Run 'ocg setup' to regenerate config, or 'ocg start --background' to start with defaults.",
+    "reset.regenerate": "Run 'node shim.js --setup' to regenerate config, or 'node shim.js' to start with defaults.",
 
     "uninstall.provider_removed": "Provider in OpenCode: removed",
     "uninstall.provider_not_found": "Provider in OpenCode: not configured",
     "uninstall.data_deleted": "Local data deleted: {0}",
     "uninstall.done": "OpenCommandGo uninstall complete.",
-
-    // -- Autostart (launcher resolution) --
-    "autostart.no_resolve": "Could not find the CLI executable to register autostart. Install ocg globally first.",
 
     // -- Misc --
     "misc.enter_keep": " (Enter to keep current)",
@@ -169,7 +149,7 @@ Commands:
     "logs.watchdog_header": "Watchdog log: {0}",
     "logs.lines": "Last {0} lines:",
     "logs.following": "Following (Ctrl+C to stop)...",
-    "logs.usage": "Usage: ocg logs [--lines N] [--follow|-f] [--watchdog]",
+    "logs.usage": "Usage: node shim.js --logs [--lines N] [--follow|-f] [--watchdog]",
   },
 
   es: {
@@ -180,11 +160,8 @@ Commands:
     "setup.opencode.cli": "OpenCode CLI: {0}",
     "setup.api_key.prompt": "API key de Command Code{0}: ",
     "setup.port.prompt": "Puerto de OpenCommandGo [{0}]: ",
-    "setup.autostart.prompt": "¿Desea habilitar inicio automático al iniciar sesión? [Y/n]: ",
     "setup.synced": "OpenCode quedó configurado en: {0}",
     "setup.not_detected": "OpenCode no está detectado todavía. Guardé la config de OpenCommandGo igual.",
-    "setup.autostart.enabled": "Inicio automático habilitado.",
-    "setup.autostart.disabled": "Inicio automático deshabilitado.",
     "setup.config_saved": "Config guardada en: {0}",
     "setup.secrets_saved": "Secretos guardados en: {0}",
 
@@ -228,8 +205,7 @@ Commands:
     "status.no": "no",
     "status.desktop_detected": "Desktop detectado: {0}",
     "status.cli_detected": "CLI detectado: {0}",
-    "status.autostart_enabled": "Inicio automático habilitado: {0}",
-    "status.autostart_provider": "Proveedor de inicio automático: {0}",
+
     "status.models_count": "Modelos disponibles en catálogo: {0}",
 
     // -- Doctor --
@@ -252,8 +228,7 @@ Commands:
     "doctor.cli": "CLI detectado: {0}",
     "doctor.compat_matrix": "Compat matrix: {0}",
     "doctor.catalog_age": "Catálogo actualizado: {0}",
-    "doctor.autostart": "Inicio automático configurado: {0}",
-    "doctor.autostart_provider": "Proveedor de inicio automático: {0}",
+
     "doctor.watchdog": "Watchdog: {0}",
     "doctor.watchdog_active": "activo",
     "doctor.watchdog_inactive": "inactivo",
@@ -275,7 +250,7 @@ Commands:
 
     // -- Errors --
     "error.required": "Ese valor es obligatorio.",
-    "error.missing_api_key": "Falta API key. Ejecute: ocg setup o ocg set-api-key",
+    "error.missing_api_key": "Falta API key. Ejecutá: node shim.js --setup",
     "error.host_not_allowed": "Host no permitido para uso local: {0}. Utilice 127.0.0.1 o localhost.",
     "error.upstream": "Command Code respondió {0}: {1}",
     "error.upstream_no_body": "Command Code no devolvió body de streaming",
@@ -283,53 +258,36 @@ Commands:
     "error.upstream_models": "models {0}",
 
     // -- Help --
-    "help.text": `${bold("ocg")}
+    "help.text": `${bold("shim.js")}
 
-Comandos:
-  setup
-  start [--background]
-  serve
-  stop
-  logs [--lines N] [--follow|-f]
-  enable-autostart
-  disable-autostart
-  autostart-status
-  autostart <enable|disable|status>
-  status
-  doctor
-  refresh-models [--probe|--full] [--provider NAME] [--parallel N] [--yes]
-  set-api-key
-  reset
-  uninstall`,
-
-    // -- Autostart --
-    "autostart.enabled": "Inicio automático habilitado.",
-    "autostart.disabled": "Inicio automático deshabilitado.",
-    "autostart.provider": "Proveedor: {0}",
-    "autostart.command": "Comando: ocg start --background",
-    "autostart.status": "Autostart: {0}",
-    "autostart.enabled_label": "habilitado",
-    "autostart.disabled_label": "deshabilitado",
-    "autostart.status_provider": "Proveedor: {0}",
-    "autostart.mode": "Modo: {0}",
-    "autostart.command_line": "Comando: {0}",
-    "autostart.sync_yes": "Config sincronizada: {0}",
-    "autostart.sync_no": "Config sincronizada: {0}",
-    "autostart.usage": "Uso: ocg autostart <enable|disable|status>",
+Flags:
+  --start                 Iniciar servidor (acción por defecto)
+  --background            Iniciar en background
+  --stop, --shutdown      Detener servidor
+  --status                Mostrar estado
+  --doctor                Diagnóstico
+  --logs, --log           Mostrar logs (--follow, --watchdog, --lines N)
+  --refresh-models        Refrescar catálogo
+    --full                  Probe completo (cada modelo)
+    --probe, --verify       Probe rápido
+    --yes                   Saltar confirmación
+    --show-models           Listar modelos después del refresh
+  --setup                 Configuración interactiva
+  --set-api-key           Cambiar API key
+  --reset                 Resetear config
+  --uninstall             Eliminar todos los datos
+  --help, -h              Mostrar esta ayuda`,
 
     // -- Uninstall --
     "reset.nothing": "La config y secrets ya están en valores por defecto. Nada que resetear.",
     "reset.done": "OpenCommandGo config reseteada:",
     "reset.deleted": "Borrado: {0}",
-    "reset.regenerate": "Ejecutá 'ocg setup' para regenerar la config, o 'ocg start --background' para arrancar con valores por defecto.",
+    "reset.regenerate": "Ejecutá 'node shim.js --setup' para regenerar la config, o 'node shim.js' para arrancar con valores por defecto.",
 
     "uninstall.provider_removed": "Provider en OpenCode: removido",
     "uninstall.provider_not_found": "Provider en OpenCode: no estaba configurado",
     "uninstall.data_deleted": "Datos locales borrados: {0}",
     "uninstall.done": "Desinstalación de OpenCommandGo terminada.",
-
-    // -- Autostart (launcher resolution) --
-    "autostart.no_resolve": "No pude encontrar el ejecutable del CLI para registrar autostart. Instalá ocg globalmente primero.",
 
     // -- Misc --
     "misc.enter_keep": " (Enter para conservar la actual)",
@@ -342,7 +300,7 @@ Comandos:
     "logs.watchdog_header": "Watchdog log: {0}",
     "logs.lines": "Últimas {0} líneas:",
     "logs.following": "Siguiendo (Ctrl+C para detener)...",
-    "logs.usage": "Uso: ocg logs [--lines N] [--follow|-f] [--watchdog]",
+    "logs.usage": "Uso: node shim.js --logs [--lines N] [--follow|-f] [--watchdog]",
   },
 }
 

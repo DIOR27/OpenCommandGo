@@ -2,20 +2,16 @@
   "name": "opencommandgo",
   "version": "0.2.0",
   "type": "module",
-  "description": "CLI shim to use Command Code models from OpenCode through a local OpenAI-compatible bridge",
-  "bin": {
-    "ocg": "./bin/ocg.js",
-    "opencommandgo": "./bin/ocg.js",
-    "opencg": "./bin/ocg.js"
-  },
+  "description": "Shim to use Command Code models from OpenCode through a local OpenAI-compatible bridge",
+  "main": "shim.js",
   "files": [
-    "bin",
-    "src",
+    "shim.js",
     "server.mjs",
+    "src",
     "README.md"
   ],
   "scripts": {
-    "start": "node ./bin/ocg.js serve",
+    "start": "node shim.js",
     "test": "node --test",
     "pack:dry-run": "npm pack --dry-run"
   },

@@ -10,7 +10,7 @@ import { mkdtempSync } from "node:fs"
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const repoDir = join(__dirname, "..")
-const cliEntry = join(repoDir, "bin", "ocg.js")
+const shimEntry = join(repoDir, "shim.js")
 const cleanupTasks = []
 
 afterEach(async () => {
@@ -31,7 +31,7 @@ describe("ocg CLI integration", () => {
     registerCleanup(ctx, mock)
     seedOpenCodeConfig(ctx.paths.opencodeConfigFile)
 
-    const first = await runCli(["start", "--background"], ctx.env)
+    const first = await runCli(["--background"], ctx.env)
     assert.equal(first.code, 0, first.stderr)
     assert.match(first.stdout, /OpenCommandGo launched|OpenCommandGo lanzado/i)
     assert.match(first.stdout, /Watchdog/i)
@@ -62,7 +62,7 @@ describe("ocg CLI integration", () => {
     assert.equal(modelList.json.data[0]?.capabilities?.pdf?.supported, true)
     assert.equal(modelList.json.data[0]?.reasoning, true)
 
-    const second = await runCli(["start", "--background"], ctx.env)
+    const second = await runCli(["--background"], ctx.env)
     assert.equal(second.code, 0, second.stderr)
     assert.match(second.stdout, /already running|ya está corriendo|ya está corriendo en/i)
   })
@@ -72,11 +72,11 @@ describe("ocg CLI integration", () => {
     const ctx = createIsolatedCliContext(await getFreePort(), mock.port)
     registerCleanup(ctx, mock)
 
-    await runCli(["start", "--background"], ctx.env)
+    await runCli(["--background"], ctx.env)
     const secrets = readJson(ctx.paths.secretsFile)
     await waitForHealth(ctx.port, secrets.shimAccessToken)
 
-    const stop = await runCli(["stop"], ctx.env)
+    const stop = await runCli(["--stop"], ctx.env)
     assert.equal(stop.code, 0, stop.stderr)
     assert.match(stop.stdout, /stopped|detenido|No process found|No hay proceso/i)
 
@@ -92,21 +92,21 @@ describe("ocg CLI integration", () => {
     const ctx = createIsolatedCliContext(await getFreePort(), mock.port)
     registerCleanup(ctx, mock)
 
-    await runCli(["start", "--background"], ctx.env)
+    await runCli(["--background"], ctx.env)
     const secrets = readJson(ctx.paths.secretsFile)
     await waitForHealth(ctx.port, secrets.shimAccessToken)
 
-    const shimLogs = await runCli(["logs", "--lines", "5"], ctx.env)
+    const shimLogs = await runCli(["--logs", "--lines", "5"], ctx.env)
     assert.equal(shimLogs.code, 0, shimLogs.stderr)
     assert.match(shimLogs.stdout, /Log:/i)
     assert.match(shimLogs.stdout, /LISTEN|COMPAT/i)
 
-    const watchdogLogs = await runCli(["logs", "--watchdog", "--lines", "5"], ctx.env)
+    const watchdogLogs = await runCli(["--logs", "--watchdog", "--lines", "5"], ctx.env)
     assert.equal(watchdogLogs.code, 0, watchdogLogs.stderr)
     assert.match(watchdogLogs.stdout, /Watchdog log|Watchdog/i)
     assert.match(watchdogLogs.stdout, /WATCHDOG started/i)
 
-    const follower = spawn(process.execPath, [cliEntry, "logs", "--watchdog", "--follow", "--lines", "1"], {
+    const follower = spawn(process.execPath, [shimEntry, "--logs", "--watchdog", "--follow", "--lines", "1"], {
       cwd: repoDir,
       env: { ...process.env, ...ctx.env },
       stdio: ["ignore", "pipe", "pipe"],
@@ -130,7 +130,7 @@ describe("ocg CLI integration", () => {
     const ctx = createIsolatedCliContext(await getFreePort(), mock.port)
     registerCleanup(ctx, mock)
 
-    await runCli(["start", "--background"], ctx.env)
+    await runCli(["--background"], ctx.env)
     const secrets = readJson(ctx.paths.secretsFile)
     await waitForHealth(ctx.port, secrets.shimAccessToken)
 
@@ -165,12 +165,12 @@ describe("ocg CLI integration", () => {
     const ctx = createIsolatedCliContext(await getFreePort(), commandCodeMock.port)
     registerCleanup(ctx, commandCodeMock)
 
-    const compact = await runCli(["refresh-models"], ctx.env)
+    const compact = await runCli(["--refresh-models"], ctx.env)
     assert.equal(compact.code, 0, compact.stderr)
     assert.doesNotMatch(compact.stdout, /meta-llama\/llama-4-scout:free/i)
     assert.doesNotMatch(compact.stdout, /xiaomi\/MiMo-V2.5/i)
 
-    const showAll = await runCli(["refresh-models", "--show-models"], ctx.env)
+    const showAll = await runCli(["--refresh-models", "--show-models"], ctx.env)
     assert.equal(showAll.code, 0, showAll.stderr)
     assert.match(showAll.stdout, /CommandCode:/)
   })
@@ -186,7 +186,7 @@ describe("ocg CLI integration", () => {
       disabled_providers: ["ocg", "commandcode", "other-provider"],
     }, null, 2), "utf8")
 
-    const refreshed = await runCli(["refresh-models"], ctx.env)
+    const refreshed = await runCli(["--refresh-models"], ctx.env)
     assert.equal(refreshed.code, 0, refreshed.stderr)
 
     const opencodeConfig = readJson(ctx.paths.opencodeConfigFile)
@@ -204,7 +204,7 @@ describe("ocg chat/completions integration", () => {
     const ctx = createIsolatedCliContext(await getFreePort(), mock.port)
     registerCleanup(ctx, mock)
 
-    await runCli(["start", "--background"], ctx.env)
+    await runCli(["--background"], ctx.env)
     const secrets = readJson(ctx.paths.secretsFile)
     await waitForHealth(ctx.port, secrets.shimAccessToken)
 
@@ -252,7 +252,7 @@ describe("ocg chat/completions integration", () => {
     const ctx = createIsolatedCliContext(await getFreePort(), mock.port)
     registerCleanup(ctx, mock)
 
-    await runCli(["start", "--background"], ctx.env)
+    await runCli(["--background"], ctx.env)
     const secrets = readJson(ctx.paths.secretsFile)
     await waitForHealth(ctx.port, secrets.shimAccessToken)
 
@@ -277,7 +277,7 @@ describe("ocg chat/completions integration", () => {
     const ctx = createIsolatedCliContext(await getFreePort(), mock.port)
     registerCleanup(ctx, mock)
 
-    await runCli(["start", "--background"], ctx.env)
+    await runCli(["--background"], ctx.env)
     const secrets = readJson(ctx.paths.secretsFile)
     await waitForHealth(ctx.port, secrets.shimAccessToken)
 
@@ -295,7 +295,7 @@ describe("ocg chat/completions integration", () => {
     const ctx = createIsolatedCliContext(await getFreePort(), mock.port)
     registerCleanup(ctx, mock)
 
-    await runCli(["start", "--background"], ctx.env)
+    await runCli(["--background"], ctx.env)
     const secrets = readJson(ctx.paths.secretsFile)
     await waitForHealth(ctx.port, secrets.shimAccessToken)
 
@@ -343,7 +343,7 @@ describe("ocg chat/completions integration", () => {
     const ctx = createIsolatedCliContext(await getFreePort(), mock.port)
     registerCleanup(ctx, mock)
 
-    await runCli(["start", "--background"], ctx.env)
+    await runCli(["--background"], ctx.env)
     const secrets = readJson(ctx.paths.secretsFile)
     await waitForHealth(ctx.port, secrets.shimAccessToken)
 
@@ -398,7 +398,7 @@ describe("ocg chat/completions integration", () => {
     const ctx = createIsolatedCliContext(await getFreePort(), mock.port)
     registerCleanup(ctx, mock)
 
-    await runCli(["start", "--background"], ctx.env)
+    await runCli(["--background"], ctx.env)
     const secrets = readJson(ctx.paths.secretsFile)
     await waitForHealth(ctx.port, secrets.shimAccessToken)
 
@@ -468,7 +468,7 @@ describe("ocg chat/completions integration", () => {
     const ctx = createIsolatedCliContext(await getFreePort(), mock.port)
     registerCleanup(ctx, mock)
 
-    await runCli(["start", "--background"], ctx.env)
+    await runCli(["--background"], ctx.env)
     const secrets = readJson(ctx.paths.secretsFile)
     await waitForHealth(ctx.port, secrets.shimAccessToken)
 
@@ -502,7 +502,7 @@ describe("ocg chat/completions integration", () => {
     const ctx = createIsolatedCliContext(await getFreePort(), mock.port)
     registerCleanup(ctx, mock)
 
-    await runCli(["start", "--background"], ctx.env)
+    await runCli(["--background"], ctx.env)
     const secrets = readJson(ctx.paths.secretsFile)
     await waitForHealth(ctx.port, secrets.shimAccessToken)
 
@@ -532,7 +532,7 @@ describe("ocg chat/completions integration", () => {
     const ctx = createIsolatedCliContext(await getFreePort(), mock.port)
     registerCleanup(ctx, mock)
 
-    await runCli(["start", "--background"], ctx.env)
+    await runCli(["--background"], ctx.env)
     const secrets = readJson(ctx.paths.secretsFile)
     await waitForHealth(ctx.port, secrets.shimAccessToken)
 
@@ -562,7 +562,7 @@ describe("ocg chat/completions integration", () => {
     const ctx = createIsolatedCliContext(await getFreePort(), mock.port)
     registerCleanup(ctx, mock)
 
-    await runCli(["start", "--background"], ctx.env)
+    await runCli(["--background"], ctx.env)
     const secrets = readJson(ctx.paths.secretsFile)
     await waitForHealth(ctx.port, secrets.shimAccessToken)
 
@@ -664,7 +664,7 @@ function seedOpenCodeConfig(file) {
 function registerCleanup(ctx, ...mocks) {
   cleanupTasks.push(async () => {
     try {
-      await runCli(["stop"], ctx.env, { timeoutMs: 8000 })
+      await runCli(["--stop"], ctx.env, { timeoutMs: 8000 })
     } catch {
       // ignore
     }
@@ -686,7 +686,7 @@ function readPidFile(file) {
 async function runCli(args, env, options = {}) {
   const timeoutMs = options.timeoutMs ?? 10000
   return await new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [cliEntry, ...args], {
+    const child = spawn(process.execPath, [shimEntry, ...args], {
       cwd: repoDir,
       env: { ...process.env, ...env },
       stdio: ["ignore", "pipe", "pipe"],

@@ -10,12 +10,6 @@ const DEFAULT_CONFIG = {
   commandCodeBaseUrl: "https://api.commandcode.ai",
   commandCodeVersion: "0.32.2",
   compatibilityRefreshHours: 6,
-  autostart: {
-    enabled: false,
-    provider: null,
-    scope: "user",
-    mode: "logon",
-  },
   detectedOpenCode: {
     configFound: false,
     desktop: null,
@@ -30,10 +24,6 @@ export function readConfig() {
   merged.detectedOpenCode = {
     ...DEFAULT_CONFIG.detectedOpenCode,
     ...(merged.detectedOpenCode || {}),
-  }
-  merged.autostart = {
-    ...DEFAULT_CONFIG.autostart,
-    ...(merged.autostart || {}),
   }
   merged.providerId = normalizeProviderId(merged.providerId)
   return merged

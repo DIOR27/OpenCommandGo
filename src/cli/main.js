@@ -3,7 +3,6 @@ import { existsSync, readFileSync, rmSync, statSync } from "node:fs"
 import { createInterface } from "node:readline/promises"
 import { stdin, stdout } from "node:process"
 import { fileURLToPath } from "node:url"
-import { disableAutostart, enableAutostart, getAutostartStatus } from "../autostart/index.js"
 import { clearPid, clearWatchdogPid, getRuntimeSettings, readCompatibilityMatrix, readConfig, readPid, readSecrets, readWatchdogPid, writeConfig, writePid, writeSecrets, writeWatchdogPid } from "../config/store.js"
 import { getPaths } from "../config/paths.js"
 import { detectOpenCodeInstallations, inspectOpenCodeProvider, removeOpenCodeProvider, syncOpenCodeConfig } from "../opencode/config.js"
@@ -44,18 +43,6 @@ export async function runCli(args) {
     case "stop":
       await stopCommand()
       return
-    case "enable-autostart":
-      await enableAutostartCommand()
-      return
-    case "disable-autostart":
-      await disableAutostartCommand()
-      return
-    case "autostart-status":
-      await autostartStatusCommand()
-      return
-    case "autostart":
-      await autostartCommand(rest)
-      return
     case "reset":
       await resetCommand()
       return
@@ -90,9 +77,6 @@ async function runSetup() {
     const portInput = await rl.question(t("setup.port.prompt", currentConfig.port))
     const port = normalizePort(portInput, currentConfig.port)
 
-    const autostartAnswer = await rl.question(t("setup.autostart.prompt"))
-    const autostartEnabled = normalizeYesNo(autostartAnswer, true)
-
     const nextConfig = {
       ...currentConfig,
       port,
@@ -126,18 +110,6 @@ async function runSetup() {
       if (target) console.log(t("setup.synced", target))
     } else {
       console.log(t("setup.not_detected"))
-    }
-
-    if (autostartEnabled) {
-      await enableAutostartCommand({ silentPrefix: true })
-    } else {
-      const refreshed = readConfig()
-      refreshed.autostart = {
-        ...(refreshed.autostart || {}),
-        enabled: false,
-      }
-      writeConfig(refreshed)
-      console.log(t("setup.autostart.disabled"))
     }
 
     console.log(t("setup.config_saved", getPaths().configFile))
@@ -216,8 +188,8 @@ async function startCommand(args) {
     return
   }
 
-  const entry = fileURLToPath(new URL("../../bin/ocg.js", import.meta.url))
-  const child = spawn(process.execPath, [entry, "serve"], {
+  const entry = fileURLToPath(new URL("../../shim.js", import.meta.url))
+  const child = spawn(process.execPath, [entry, "--start"], {
     detached: true,
     stdio: "ignore",
     windowsHide: true,
@@ -250,7 +222,6 @@ async function statusCommand() {
   const config = readConfig()
   const detected = detectOpenCodeInstallations()
   const health = await readHealth(settings.host, settings.port)
-  const autostart = await getAutostartStatus()
   const compatibility = readCompatibilityMatrix()
   const modelCount = Object.values(compatibility.models || {}).filter(model => model?.status !== "broken").length
   console.log(t("status.shim", health ? t("status.active") : t("status.inactive"), settings.host, settings.port))
@@ -261,8 +232,6 @@ async function statusCommand() {
   console.log(t("status.provider_registered", inspectOpenCodeProvider(config.providerId) ? t("status.yes") : t("status.no")))
   console.log(t("status.desktop_detected", detected.desktop || t("status.no")))
   console.log(t("status.cli_detected", detected.cli || t("status.no")))
-  console.log(t("status.autostart_enabled", autostart.enabled ? t("status.yes") : t("status.no")))
-  console.log(t("status.autostart_provider", autostart.provider || t("status.no")))
   console.log(t("status.models_count", modelCount))
 }
 
@@ -272,7 +241,6 @@ async function doctorCommand() {
   const detected = detectOpenCodeInstallations()
   const health = await readHealth(settings.host, settings.port)
   const provider = inspectOpenCodeProvider(config.providerId)
-  const autostart = await getAutostartStatus()
   const compatibility = readCompatibilityMatrix("commandcode")
   const modelCount = Object.values(compatibility.models || {}).filter(model => model?.status !== "broken").length
 
@@ -301,8 +269,6 @@ async function doctorCommand() {
   console.log(t("doctor.cli", detected.cli ? t("status.yes") : t("status.no")))
   console.log(t("doctor.compat_matrix", getPaths().compatibilityFile))
   console.log(t("doctor.catalog_age", formatCatalogAge(compatibility.updated_at)))
-  console.log(t("doctor.autostart", autostart.enabled ? t("status.yes") : t("status.no")))
-  console.log(t("doctor.autostart_provider", autostart.provider || t("misc.unknown")))
   console.log(t("doctor.models", modelCount))
 
   // Remote checks (only if API key exists)
@@ -638,45 +604,6 @@ async function stopCommand() {
   console.log(t("stop.killed_by_port", settings.port, foundPid))
 }
 
-async function autostartCommand(args) {
-  const [subcommand = "status"] = args
-  switch (subcommand) {
-    case "enable":
-      await enableAutostartCommand()
-      return
-    case "disable":
-      await disableAutostartCommand()
-      return
-    case "status":
-      await autostartStatusCommand()
-      return
-    default:
-      console.log(t("autostart.usage"))
-  }
-}
-
-async function enableAutostartCommand(options = {}) {
-  const result = await enableAutostart()
-  if (!options.silentPrefix) console.log(t("autostart.enabled"))
-  console.log(t("autostart.provider", result.provider))
-  console.log(t("autostart.command"))
-}
-
-async function disableAutostartCommand() {
-  const result = await disableAutostart()
-  console.log(t("autostart.disabled"))
-  console.log(t("autostart.provider", result.provider))
-}
-
-async function autostartStatusCommand() {
-  const status = await getAutostartStatus()
-  console.log(t("autostart.status", status.enabled ? t("autostart.enabled_label") : t("autostart.disabled_label")))
-  console.log(t("autostart.status_provider", status.provider || t("misc.unknown")))
-  console.log(t("autostart.mode", status.mode))
-  console.log(t("autostart.command_line", status.command))
-  console.log(t(status.matchesConfig ? "autostart.sync_yes" : "autostart.sync_no", status.matchesConfig ? t("status.yes") : t("status.no")))
-}
-
 async function resetCommand() {
   await stopCommand()
   const paths = getPaths()
@@ -706,7 +633,6 @@ async function resetCommand() {
 
 async function uninstallCommand() {
   await stopCommand()
-  await disableAutostart()
   const config = readConfig()
   const removedProvider = removeOpenCodeProvider(config.providerId)
   const dataDir = getPaths().dataDir
