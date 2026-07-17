@@ -11,7 +11,7 @@ import { getLocale, t } from "../shared/i18n.js"
 import { COMMANDCODE_PROVIDER } from "../shared/models.js"
 import { getFreeModelsFromCmd } from "../shared/commandcode-cmd-catalog.js"
 import { fetchDocsModels } from "../shared/fetch-docs-models.js"
-import { readManualCapabilities, setManualCapability, getModelOverrides } from "../config/manual-capabilities.js"
+import { readManualCapabilities, setManualCapability, getModelOverrides, applyManualOverrides } from "../config/manual-capabilities.js"
 import { bold } from "../shared/color.js"
 import { findPidByPort, gracefulKill, isProcessAlive, sleep } from "../shared/process-utils.js"
 
@@ -664,19 +664,64 @@ async function uninstallCommand() {
   console.log(t("uninstall.done"))
 }
 
-async function docsModelsCommand(sections = []) {
+/**
+ * Map doc capability names to our internal keys.
+ * "Text input" is not a tracked capability.
+ */
+const DOCS_CAP_MAP = {
+  Vision: "vision",
+  PDF: "pdf",
+  Audio: "audio",
+  Video: "video",
+  Reasoning: "reasoning",
+}
+
+async function docsModelsCommand() {
   console.log(t("docs.fetching"))
   try {
-    const filterSections = sections.length > 0 ? sections : undefined
-    const data = await fetchDocsModels(filterSections)
-    const sectionNames = Object.keys(data)
-    console.log(t("docs.found", sectionNames.length))
-    for (const section of sectionNames) {
-      console.log(`\n${bold(section)}`)
-      for (const m of data[section]) {
-        const caps = m.capabilities ? `  [${m.capabilities}]` : ""
-        console.log(`  ${m.model_id}  ${m.name}${caps}`)
+    const data = await fetchDocsModels(["Open Source"])
+    const models = data["Open Source"] || []
+    let applied = 0
+
+    for (const m of models) {
+      if (!m.capabilities) continue
+      const caps = m.capabilities.split(",").map(c => c.trim())
+      for (const [docName, internalName] of Object.entries(DOCS_CAP_MAP)) {
+        if (caps.includes(docName)) {
+          setManualCapability(m.model_id, internalName, true)
+        }
       }
+      applied++
+    }
+
+    console.log(t("docs.applied", applied))
+
+    // Re-sync OpenCode config if proxy is running
+    const settings = getRuntimeSettings()
+    if (settings) {
+      try {
+        const { syncOpenCodeConfig } = await import("../opencode/config.js")
+        const { COMMANDCODE_PROVIDER } = await import("../shared/models.js")
+        const matrix = readCompatibilityMatrix("commandcode")
+        applyManualOverrides(matrix.models)
+        await syncOpenCodeConfig({
+          host: settings.host,
+          port: settings.port,
+          providers: [{
+            id: settings.providerId,
+            kind: "commandcode",
+            routePrefix: COMMANDCODE_PROVIDER.routePrefix,
+            name: COMMANDCODE_PROVIDER.name,
+            compatibilityMatrix: matrix,
+          }],
+          createIfMissing: true,
+        })
+        console.log(t("docs.synced"))
+      } catch {
+        console.log(t("docs.sync_failed"))
+      }
+    } else {
+      console.log(t("edit.sync_failed"))
     }
   } catch (e) {
     console.log(t("docs.error", e.message))

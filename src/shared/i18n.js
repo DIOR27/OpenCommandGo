@@ -20,6 +20,9 @@ const messages = {
     "docs.fetching": "Fetching model catalog from Command Code documentation...",
     "docs.found": "Found {0} model categories:",
     "docs.error": "Could not fetch docs: {0}",
+    "docs.applied": "Applied capabilities for {0} Open Source models from docs.",
+    "docs.synced": "OpenCode config synced with doc-based capabilities.",
+    "docs.sync_failed": "Could not sync OpenCode config (proxy not running?).",
 
     // -- Edit models --
     "edit.no_models": "No models in catalog. Run --refresh-models first.",
@@ -193,6 +196,9 @@ Flags:
     "docs.fetching": "Obteniendo catálogo de modelos desde la documentación de Command Code...",
     "docs.found": "Se encontraron {0} categorías de modelos:",
     "docs.error": "No se pudo obtener la documentación: {0}",
+    "docs.applied": "Se aplicaron capabilities de {0} modelos Open Source desde la documentación.",
+    "docs.synced": "Config de OpenCode sincronizada con capabilities de la documentación.",
+    "docs.sync_failed": "No se pudo sincronizar OpenCode (¿proxy no está corriendo?).",
 
     // -- Edit models --
     "edit.no_models": "No hay modelos en el catálogo. Ejecutá --refresh-models primero.",
