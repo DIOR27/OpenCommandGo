@@ -188,7 +188,7 @@ async function startCommand(args) {
     return
   }
 
-  const entry = fileURLToPath(new URL("../../shim.js", import.meta.url))
+  const entry = fileURLToPath(new URL("../../proxy.js", import.meta.url))
   const child = spawn(process.execPath, [entry, "--start"], {
     detached: true,
     stdio: "ignore",

@@ -99,7 +99,7 @@ const messages = {
 
     // -- Errors --
     "error.required": "This value is required.",
-    "error.missing_api_key": "Missing API key. Run: node shim.js --setup",
+    "error.missing_api_key": "Missing API key. Run: node proxy.js --setup",
     "error.host_not_allowed": "Host not allowed for local use: {0}. Use 127.0.0.1 or localhost.",
     "error.upstream": "Command Code responded {0}: {1}",
     "error.upstream_no_body": "Command Code did not return a streaming body",
@@ -107,7 +107,7 @@ const messages = {
     "error.upstream_models": "models {0}",
 
     // -- Help --
-    "help.text": `${bold("shim.js")}
+    "help.text": `${bold("proxy.js")}
 
 Flags:
   --start                 Start server (default action)
@@ -131,7 +131,7 @@ Flags:
     "reset.nothing": "Config and secrets already at defaults. Nothing to reset.",
     "reset.done": "OpenCommandGo config reset:",
     "reset.deleted": "Deleted: {0}",
-    "reset.regenerate": "Run 'node shim.js --setup' to regenerate config, or 'node shim.js' to start with defaults.",
+    "reset.regenerate": "Run 'node proxy.js --setup' to regenerate config, or 'node proxy.js' to start with defaults.",
 
     "uninstall.provider_removed": "Provider in OpenCode: removed",
     "uninstall.provider_not_found": "Provider in OpenCode: not configured",
@@ -149,7 +149,7 @@ Flags:
     "logs.watchdog_header": "Watchdog log: {0}",
     "logs.lines": "Last {0} lines:",
     "logs.following": "Following (Ctrl+C to stop)...",
-    "logs.usage": "Usage: node shim.js --logs [--lines N] [--follow|-f] [--watchdog]",
+    "logs.usage": "Usage: node proxy.js --logs [--lines N] [--follow|-f] [--watchdog]",
   },
 
   es: {
@@ -250,7 +250,7 @@ Flags:
 
     // -- Errors --
     "error.required": "Ese valor es obligatorio.",
-    "error.missing_api_key": "Falta API key. Ejecutá: node shim.js --setup",
+    "error.missing_api_key": "Falta API key. Ejecutá: node proxy.js --setup",
     "error.host_not_allowed": "Host no permitido para uso local: {0}. Utilice 127.0.0.1 o localhost.",
     "error.upstream": "Command Code respondió {0}: {1}",
     "error.upstream_no_body": "Command Code no devolvió body de streaming",
@@ -258,7 +258,7 @@ Flags:
     "error.upstream_models": "models {0}",
 
     // -- Help --
-    "help.text": `${bold("shim.js")}
+    "help.text": `${bold("proxy.js")}
 
 Flags:
   --start                 Iniciar servidor (acción por defecto)
@@ -282,7 +282,7 @@ Flags:
     "reset.nothing": "La config y secrets ya están en valores por defecto. Nada que resetear.",
     "reset.done": "OpenCommandGo config reseteada:",
     "reset.deleted": "Borrado: {0}",
-    "reset.regenerate": "Ejecutá 'node shim.js --setup' para regenerar la config, o 'node shim.js' para arrancar con valores por defecto.",
+    "reset.regenerate": "Ejecutá 'node proxy.js --setup' para regenerar la config, o 'node proxy.js' para arrancar con valores por defecto.",
 
     "uninstall.provider_removed": "Provider en OpenCode: removido",
     "uninstall.provider_not_found": "Provider en OpenCode: no estaba configurado",
@@ -300,7 +300,7 @@ Flags:
     "logs.watchdog_header": "Watchdog log: {0}",
     "logs.lines": "Últimas {0} líneas:",
     "logs.following": "Siguiendo (Ctrl+C para detener)...",
-    "logs.usage": "Uso: node shim.js --logs [--lines N] [--follow|-f] [--watchdog]",
+    "logs.usage": "Uso: node proxy.js --logs [--lines N] [--follow|-f] [--watchdog]",
   },
 }
 

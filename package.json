@@ -3,9 +3,9 @@
   "version": "0.2.0",
   "type": "module",
   "description": "Shim to use Command Code models from OpenCode through a local OpenAI-compatible bridge",
-  "main": "shim.js",
+  "main": "proxy.js",
   "files": [
-    "shim.js",
+    "proxy.js",
     "server.mjs",
     "src",
     "README.md"

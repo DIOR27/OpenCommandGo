@@ -10,7 +10,7 @@ import { mkdtempSync } from "node:fs"
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const repoDir = join(__dirname, "..")
-const shimEntry = join(repoDir, "shim.js")
+const shimEntry = join(repoDir, "proxy.js")
 const cleanupTasks = []
 
 afterEach(async () => {
