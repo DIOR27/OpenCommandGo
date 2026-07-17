@@ -5,9 +5,10 @@ import { COMMANDCODE_PROVIDER, resolveBridgeInputModalities } from "../shared/mo
 import { t } from "../shared/i18n.js"
 import { buildOpenAICompletion, callCommandCodeAlpha, startCommandCodeAlphaStream, streamOpenAIResponse, summarizeIncomingMessages } from "./chat-bridge.js"
 import { createCatalogController } from "./catalog-runtime.js"
+import { fetchCommandCodeUsage, formatUsageLine, getCachedUsage, isUsageFresh } from "./usage-tracker.js"
 import { isLoopbackHost, json, openAIError, readJson, requireShimAuth } from "./http-utils.js"
 import { installProcessLifecycleHandlers } from "./lifecycle.js"
-import { runtimeLog } from "./runtime-log.js"
+import { runtimeLog, setPersistentStatus } from "./runtime-log.js"
 
 let currentServer = null
 
@@ -147,7 +148,9 @@ export async function startServer() {
             commandCodeCatalogController.promoteModelVision(model, settings)
               .catch(err => log(`UPGRADE error=${err.message} model=${model}`))
           }
-          return streamOpenAIResponse(res, model, upstream, { log })
+          await streamOpenAIResponse(res, model, upstream, { log })
+          printBalance()
+          return
         }
 
         const upstream = await callCommandCodeAlpha(body, model, settings, { log })
@@ -155,7 +158,9 @@ export async function startServer() {
           commandCodeCatalogController.promoteModelVision(model, settings)
             .catch(err => log(`UPGRADE error=${err.message} model=${model}`))
         }
-        return json(res, 200, buildOpenAICompletion(model, upstream))
+        json(res, 200, buildOpenAICompletion(model, upstream))
+        printBalance()
+        return
       }
 
       json(res, 404, openAIError("not_found", `Ruta no soportada: ${req.method} ${url.pathname}`))
@@ -177,7 +182,29 @@ export async function startServer() {
   log(`LISTEN http://${settings.host}:${settings.port}`)
   console.log(t("server.listening", settings.host, settings.port))
   commandCodeCatalogController.schedule(settings)
+
+  // Show loading status immediately, update when usage data arrives (TTY only)
+  if (process.stdout.isTTY) {
+    setPersistentStatus("syncing usage…")
+  }
+  fetchCommandCodeUsage().then(usage => {
+    const line = formatUsageLine(usage)
+    if (line) setPersistentStatus(line)
+  }).catch(() => {})
+
   return server
+}
+
+function printBalance() {
+  const line = formatUsageLine(getCachedUsage())
+  if (line) setPersistentStatus(line)
+  // Trigger background refresh if stale
+  if (!isUsageFresh()) {
+    fetchCommandCodeUsage().then(usage => {
+      const updated = formatUsageLine(usage)
+      if (updated) setPersistentStatus(updated)
+    }).catch(() => {})
+  }
 }
 
 function requestHasImage(messages) {
