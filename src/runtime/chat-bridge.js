@@ -304,20 +304,32 @@ export function collectToolCalls(events) {
 
 export function summarizeIncomingMessages(messages) {
   if (!Array.isArray(messages)) return "messages=0"
-  return messages.map((message, index) => {
-    if (!message || typeof message !== "object") return `#${index}:invalid`
+  const roles = {}
+  const types = {}
+  let invalid = 0
+  for (const message of messages) {
+    if (!message || typeof message !== "object") {
+      invalid++
+      continue
+    }
+    const role = message.role || "unknown"
+    roles[role] = (roles[role] || 0) + 1
     if (typeof message.content === "string") {
-      return `#${index}:${message.role || "unknown"}:text`
+      types.text = (types.text || 0) + 1
+      continue
     }
     if (!Array.isArray(message.content)) {
-      return `#${index}:${message.role || "unknown"}:unknown`
+      types.unknown = (types.unknown || 0) + 1
+      continue
     }
-    const kinds = message.content.map(part => {
-      if (!part || typeof part !== "object") return "unknown"
-      return part.type || "unknown"
-    }).join(",")
-    return `#${index}:${message.role || "unknown"}:[${kinds}]`
-  }).join(" | ")
+    for (const part of message.content) {
+      const type = part?.type || "unknown"
+      types[type] = (types[type] || 0) + 1
+    }
+  }
+  const roleStr = Object.entries(roles).map(([k, v]) => `${k}:${v}`).join(",")
+  const typeStr = Object.entries(types).map(([k, v]) => `${k}:${v}`).join(",")
+  return `messages=${messages.length} roles={${roleStr}} types={${typeStr}}${invalid ? ` invalid=${invalid}` : ""}`
 }
 
 export function extractUsage(usage) {
