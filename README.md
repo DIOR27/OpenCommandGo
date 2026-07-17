@@ -19,6 +19,8 @@ node proxy.js --stop          # stop server
 node proxy.js --status        # show status
 node proxy.js --logs --follow # live log tailing
 node proxy.js --doctor        # full diagnostics
+node proxy.js --docs-models   # scrape Open Source model capabilities from docs and apply
+node proxy.js --edit-models   # interactive TUI to toggle capabilities per model
 ```
 
 ### First-time setup
@@ -36,6 +38,30 @@ node proxy.js --refresh-models --full       # probe text, image, reasoning, tool
 node proxy.js --refresh-models --full --yes  # skip confirmation
 ```
 
+### Open Source model capabilities from docs
+
+```bash
+node proxy.js --docs-models
+```
+
+Scrapes the Command Code documentation for Open Source models and applies their documented capabilities (vision, reasoning, etc.) to `~/.config/ocg/manual-capabilities.json`, then syncs to OpenCode. The data survives catalog refreshes and is immediately visible in OpenCode (image input, reasoning badge, etc.).
+
+All capabilities are tagged with source `manual_override` and can be verified or adjusted with `--edit-models`.
+
+### Interactive capability editor
+
+```bash
+node proxy.js --edit-models
+```
+
+Raw-mode TUI with arrow key navigation:
+- **↑↓** — navigate between models and capabilities
+- **Enter** — select a model to edit, or toggle a capability on/off
+- **Esc/q** — go back to model list or exit
+- **▣/□** — enabled/disabled capability indicator
+
+Overrides are persisted to `~/.config/ocg/manual-capabilities.json`, survive any catalog refresh, and are automatically synced to `opencode.json` on exit.
+
 ## Local configuration
 
 ### Windows
@@ -51,6 +77,14 @@ node proxy.js --refresh-models --full --yes  # skip confirmation
 ### Linux
 
 - `${XDG_CONFIG_HOME:-~/.config}/ocg/`
+
+Runtime data:
+
+- `compatibility.commandcode.json` — cached model catalog
+- `manual-capabilities.json` — manual capability overrides (via `--edit-models` or `--docs-models`)
+- `usage.json` — cached Command Code usage/balance
+- `secrets.json` — local token
+- `config.json` — server configuration
 
 ## OpenCode
 
