@@ -6,5 +6,7 @@ export function runtimeLog(line) {
   const paths = getPaths()
   ensureDir(paths.logDir)
   rotateLogIfNeeded(paths.logFile)
-  appendFileSync(paths.logFile, `[${new Date().toISOString()}] ${line}\n`)
+  const formatted = `[${new Date().toISOString()}] ${line}`
+  appendFileSync(paths.logFile, formatted + "\n")
+  console.log(formatted)
 }
