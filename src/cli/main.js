@@ -53,7 +53,7 @@ export async function runCli(args) {
       await uninstallCommand()
       return
     case "docs-models":
-      await docsModelsCommand()
+      await docsModelsCommand(rest)
       return
     case "edit-models":
       await editModelsCommand()
@@ -664,13 +664,14 @@ async function uninstallCommand() {
   console.log(t("uninstall.done"))
 }
 
-async function docsModelsCommand() {
+async function docsModelsCommand(sections = []) {
   console.log(t("docs.fetching"))
   try {
-    const data = await fetchDocsModels()
-    const sections = Object.keys(data)
-    console.log(t("docs.found", sections.length))
-    for (const section of sections) {
+    const filterSections = sections.length > 0 ? sections : undefined
+    const data = await fetchDocsModels(filterSections)
+    const sectionNames = Object.keys(data)
+    console.log(t("docs.found", sectionNames.length))
+    for (const section of sectionNames) {
       console.log(`\n${bold(section)}`)
       for (const m of data[section]) {
         const caps = m.capabilities ? `  [${m.capabilities}]` : ""
