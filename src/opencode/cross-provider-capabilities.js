@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from "node:fs"
+import { parseJsonLike } from "../shared/json.js"
 
 const CAPABILITY_KEYS = ["vision", "pdf", "audio", "video"]
 const EXTRA_INPUT_MODALITIES = ["image", "pdf", "audio", "video"]
@@ -17,14 +18,19 @@ export function providerlessModelId(id) {
 }
 
 export function readOpenCodeConfigFor(paths) {
-  const file = paths?.opencodeConfigFile
-  if (!file || !existsSync(file)) return {}
-  try {
-    const raw = JSON.parse(readFileSync(file, "utf8"))
-    return raw && typeof raw === "object" ? raw : {}
-  } catch {
-    return {}
+  const candidates = paths?.opencodeConfigFile
+    ? [`${paths.opencodeConfigFile}c`, paths.opencodeConfigFile]
+    : []
+  for (const file of candidates) {
+    if (!file || !existsSync(file)) continue
+    try {
+      const raw = parseJsonLike(readFileSync(file, "utf8"))
+      if (raw && typeof raw === "object") return raw
+    } catch {
+      // try next candidate
+    }
   }
+  return {}
 }
 
 export function buildComparableProviderModels(existingProviders, excludeIds) {

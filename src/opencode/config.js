@@ -15,6 +15,7 @@ import {
   supportsCommandCodeReasoning,
 } from "../shared/commandcode-thinking.js"
 import { resolveContextWindow } from "../shared/context-windows.js"
+import { parseJsonLike } from "../shared/json.js"
 import {
   buildComparableProviderModels,
   mergeCrossProviderCapabilities,
@@ -23,6 +24,10 @@ import {
 import { readResolvedProvidersFromSidecar } from "./sidecar-resolved-providers.js"
 
 const JSON_PARSE_FAILED = Symbol("json-parse-failed")
+
+// Serialization queue for syncOpenCodeConfig — prevents race conditions
+// when concurrent calls read stale state and overwrite each other's writes.
+let syncQueue = Promise.resolve()
 
 export function detectOpenCodeInstallations() {
   const paths = getPaths()
@@ -43,42 +48,64 @@ export async function syncOpenCodeConfig({
   resolvedProviderMetadata = null,
   readResolvedProviders = readResolvedProvidersFromSidecar,
 } = {}) {
-  const paths = getPaths()
-  const secrets = readSecrets()
-  const targetFile = resolvePrimaryOpenCodeConfigFile(paths, { createIfMissing })
-  if (!targetFile) return null
-  ensureParentDir(targetFile)
-  const config = readJson(targetFile, { parseFailureValue: JSON_PARSE_FAILED })
-  if (config === JSON_PARSE_FAILED) return targetFile
-  const existingConfig = readOpenCodeConfigFor(paths)
-  const runtimeProviders = await readComparableRuntimeProviders({ resolvedProviderMetadata, readResolvedProviders })
-  const previouslyConfiguredProviderIds = collectConfiguredProviderIds(paths)
-  const nextConfig = config || { $schema: "https://opencode.ai/config.json" }
-  nextConfig.provider ||= {}
-  const enabledProviderIds = new Set()
-  for (const provider of providers) {
-    if (!provider?.id || !provider?.compatibilityMatrix) continue
-    const syncedIds = resolveSyncedProviderIds(provider)
-    for (const id of syncedIds) enabledProviderIds.add(id)
-    const providerConfig = buildProviderConfig({ host, port, provider, token: secrets.shimAccessToken })
-    if (provider.kind === "commandcode") {
-      mergeCrossProviderCapabilities({
-        commandcodeModels: providerConfig.models,
-        providerSources: buildCrossProviderSources({
-          runtimeProviders,
-          existingProviders: existingConfig?.provider || {},
-          excludeIds: ["commandcode", "ocg", provider.id],
-        }),
-      })
+  // Serialize concurrent syncs: each call waits for the previous to finish
+  // before reading the config file. This prevents race conditions where
+  // concurrent writes overwrite each other with stale data.
+  const prevQueue = syncQueue
+  let nextDone
+  syncQueue = new Promise(resolve => { nextDone = resolve })
+  await prevQueue
+  try {
+    const paths = getPaths()
+    const secrets = readSecrets()
+    const targetFile = resolvePrimaryOpenCodeConfigFile(paths, { createIfMissing })
+    if (!targetFile) return null
+    ensureParentDir(targetFile)
+    const config = readJson(targetFile, { parseFailureValue: JSON_PARSE_FAILED })
+    if (config === JSON_PARSE_FAILED) return targetFile
+    const existingConfig = readOpenCodeConfigFor(paths)
+    const runtimeProviders = await readComparableRuntimeProviders({ resolvedProviderMetadata, readResolvedProviders })
+    const previouslyConfiguredProviderIds = collectConfiguredProviderIds(paths)
+    const nextConfig = config || { $schema: "https://opencode.ai/config.json" }
+    nextConfig.provider ||= {}
+
+    // Collect provider IDs the user explicitly disabled — we MUST respect
+    // this choice and NOT re-create provider entries they chose to disable.
+    const disabledProviderIds = new Set(
+      (config?.disabled_providers || [])
+        .map(id => String(id || "").trim())
+        .filter(Boolean),
+    )
+
+    const enabledProviderIds = new Set()
+    for (const provider of providers) {
+      if (!provider?.id || !provider?.compatibilityMatrix) continue
+      const syncedIds = resolveSyncedProviderIds(provider)
+      for (const id of syncedIds) enabledProviderIds.add(id)
+      const providerConfig = buildProviderConfig({ host, port, provider, token: secrets.shimAccessToken })
+      if (provider.kind === "commandcode") {
+        mergeCrossProviderCapabilities({
+          commandcodeModels: providerConfig.models,
+          providerSources: buildCrossProviderSources({
+            runtimeProviders,
+            existingProviders: existingConfig?.provider || {},
+            excludeIds: ["commandcode", "ocg", provider.id],
+          }),
+        })
+      }
+      for (const id of syncedIds) {
+        // Respect user's explicit choice: skip IDs they disabled
+        if (disabledProviderIds.has(id)) continue
+        nextConfig.provider[id] = providerConfig
+      }
     }
-    for (const id of syncedIds) {
-      nextConfig.provider[id] = providerConfig
-    }
+    stripDisabledProviders(nextConfig, enabledProviderIds, previouslyConfiguredProviderIds)
+    writeFileSync(targetFile, JSON.stringify(nextConfig, null, 2), "utf8")
+    syncDisabledProviderLists(paths, enabledProviderIds, targetFile, previouslyConfiguredProviderIds)
+    return targetFile
+  } finally {
+    nextDone()
   }
-  stripDisabledProviders(nextConfig, enabledProviderIds, previouslyConfiguredProviderIds)
-  writeFileSync(targetFile, JSON.stringify(nextConfig, null, 2), "utf8")
-  syncDisabledProviderLists(paths, enabledProviderIds, targetFile, previouslyConfiguredProviderIds)
-  return targetFile
 }
 
 export function inspectOpenCodeProvider(providerId) {
@@ -291,7 +318,8 @@ function hasAnyOpenCodeConfigFile(paths) {
 }
 
 function getOpenCodeConfigCandidates(paths) {
-  return [paths.opencodeConfigFile, `${paths.opencodeConfigFile}c`]
+  // .jsonc first — OpenCode Desktop writes .jsonc
+  return [`${paths.opencodeConfigFile}c`, paths.opencodeConfigFile]
 }
 
 function resolvePrimaryOpenCodeConfigFile(paths, { createIfMissing = false } = {}) {
@@ -339,111 +367,6 @@ function collectConfiguredProviderIds(paths) {
     }
   }
   return configuredIds
-}
-
-function parseJsonLike(raw) {
-  return JSON.parse(removeJsonTrailingCommas(stripJsonComments(raw)))
-}
-
-function stripJsonComments(raw) {
-  let result = ""
-  let inString = false
-  let escaping = false
-  let inLineComment = false
-  let inBlockComment = false
-
-  for (let index = 0; index < raw.length; index += 1) {
-    const char = raw[index]
-    const next = raw[index + 1]
-
-    if (inLineComment) {
-      if (char === "\n" || char === "\r") {
-        inLineComment = false
-        result += char
-      }
-      continue
-    }
-
-    if (inBlockComment) {
-      if (char === "*" && next === "/") {
-        inBlockComment = false
-        index += 1
-      }
-      continue
-    }
-
-    if (inString) {
-      result += char
-      if (escaping) {
-        escaping = false
-      } else if (char === "\\") {
-        escaping = true
-      } else if (char === '"') {
-        inString = false
-      }
-      continue
-    }
-
-    if (char === '"') {
-      inString = true
-      result += char
-      continue
-    }
-
-    if (char === "/" && next === "/") {
-      inLineComment = true
-      index += 1
-      continue
-    }
-
-    if (char === "/" && next === "*") {
-      inBlockComment = true
-      index += 1
-      continue
-    }
-
-    result += char
-  }
-
-  return result
-}
-
-function removeJsonTrailingCommas(raw) {
-  let result = ""
-  let inString = false
-  let escaping = false
-
-  for (let index = 0; index < raw.length; index += 1) {
-    const char = raw[index]
-
-    if (inString) {
-      result += char
-      if (escaping) {
-        escaping = false
-      } else if (char === "\\") {
-        escaping = true
-      } else if (char === '"') {
-        inString = false
-      }
-      continue
-    }
-
-    if (char === '"') {
-      inString = true
-      result += char
-      continue
-    }
-
-    if (char === ",") {
-      let nextIndex = index + 1
-      while (nextIndex < raw.length && /\s/.test(raw[nextIndex])) nextIndex += 1
-      if (raw[nextIndex] === "}" || raw[nextIndex] === "]") continue
-    }
-
-    result += char
-  }
-
-  return result
 }
 
 function detectDesktopPath() {
