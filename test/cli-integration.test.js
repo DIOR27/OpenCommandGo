@@ -46,7 +46,6 @@ describe("ocg CLI integration", () => {
     const opencodeConfig = readJson(ctx.paths.opencodeConfigFile)
     const provider = opencodeConfig?.provider?.commandcode
     assert.ok(provider, "expected provider to be synced into OpenCode config")
-    assert.ok(opencodeConfig?.provider?.ocg, "expected legacy provider alias to be kept")
     assert.equal(provider.name, "Command Code")
     assert.equal(provider.options?.baseURL, `http://127.0.0.1:${ctx.port}/commandcode/v1`)
     assert.equal(provider.options?.headers?.["x-ocg-token"], secrets.shimAccessToken)
@@ -191,7 +190,6 @@ describe("ocg CLI integration", () => {
 
     const opencodeConfig = readJson(ctx.paths.opencodeConfigFile)
     assert.ok(opencodeConfig?.provider?.commandcode, "expected commandcode provider to be synced")
-    assert.ok(opencodeConfig?.provider?.ocg, "expected ocg alias to be synced")
 
     const opencodeJsonc = readJson(`${ctx.paths.opencodeConfigFile}c`)
     assert.deepStrictEqual(opencodeJsonc?.disabled_providers, ["other-provider"])

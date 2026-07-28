@@ -58,7 +58,6 @@ describe("syncOpenCodeConfig", () => {
       const config = JSON.parse(readFileSync(file, "utf8"))
       const provider = config.provider.commandcode
       assert.ok(provider)
-      assert.ok(config.provider.ocg)
       assert.equal(provider.name, "Command Code")
       assert.equal(provider.options.baseURL, "http://127.0.0.1:4310/commandcode/v1")
       assert.deepStrictEqual(provider.models["xiaomi/MiMo-V2.5"].modalities.input, ["text", "image", "pdf", "audio", "video"])
@@ -447,7 +446,7 @@ describe("syncOpenCodeConfig", () => {
     })
   })
 
-  it("preserves intentionally disabled commandcode providers when they were already configured", async () => {
+  it("re-enables commandcode providers on sync, but preserves other disabled providers", async () => {
     await withOpenCodeFixture(async root => {
       const file = await seedExistingConfig(root, {
         provider: {
@@ -478,7 +477,8 @@ describe("syncOpenCodeConfig", () => {
       })
 
       const config = JSON.parse(readFileSync(file, "utf8"))
-      assert.deepStrictEqual(config.disabled_providers, ["commandcode", "ocg", "other-provider"])
+      assert.equal(config.disabled_providers.length, 1)
+      assert.equal(config.disabled_providers[0], "other-provider")
     })
   })
 

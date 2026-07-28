@@ -69,14 +69,6 @@ export async function syncOpenCodeConfig({
     const nextConfig = config || { $schema: "https://opencode.ai/config.json" }
     nextConfig.provider ||= {}
 
-    // Collect provider IDs the user explicitly disabled — we MUST respect
-    // this choice and NOT re-create provider entries they chose to disable.
-    const disabledProviderIds = new Set(
-      (config?.disabled_providers || [])
-        .map(id => String(id || "").trim())
-        .filter(Boolean),
-    )
-
     const enabledProviderIds = new Set()
     for (const provider of providers) {
       if (!provider?.id || !provider?.compatibilityMatrix) continue
@@ -93,11 +85,26 @@ export async function syncOpenCodeConfig({
           }),
         })
       }
+      // Write only under the primary provider ID — legacy aliases (e.g. "ocg")
+      // cause the same models to appear under multiple providers in OpenCode.
+      nextConfig.provider[provider.id] = providerConfig
+      // Remove stale entries from legacy aliases
       for (const id of syncedIds) {
-        // Respect user's explicit choice: skip IDs they disabled
-        if (disabledProviderIds.has(id)) continue
-        nextConfig.provider[id] = providerConfig
+        if (id !== provider.id && nextConfig.provider[id]) {
+          delete nextConfig.provider[id]
+        }
       }
+    }
+    // Remove own provider IDs from disabled_providers — the proxy always
+    // re-establishes itself on restart.
+    if (Array.isArray(nextConfig.disabled_providers)) {
+      const ownProviderIds = new Set(
+        providers.filter(p => p?.id).flatMap(p => resolveSyncedProviderIds(p)),
+      )
+      nextConfig.disabled_providers = nextConfig.disabled_providers.filter(
+        id => !ownProviderIds.has(String(id || "").trim()),
+      )
+      if (nextConfig.disabled_providers.length === 0) delete nextConfig.disabled_providers
     }
     stripDisabledProviders(nextConfig, enabledProviderIds, previouslyConfiguredProviderIds)
     writeFileSync(targetFile, JSON.stringify(nextConfig, null, 2), "utf8")
