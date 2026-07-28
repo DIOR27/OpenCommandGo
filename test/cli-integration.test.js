@@ -188,11 +188,11 @@ describe("ocg CLI integration", () => {
     const refreshed = await runCli(["--refresh-models"], ctx.env)
     assert.equal(refreshed.code, 0, refreshed.stderr)
 
-    const opencodeConfig = readJson(ctx.paths.opencodeConfigFile)
+    // Primary file is .jsonc when both exist — provider is written there
+    const opencodeConfig = readJson(`${ctx.paths.opencodeConfigFile}c`)
     assert.ok(opencodeConfig?.provider?.commandcode, "expected commandcode provider to be synced")
-
-    const opencodeJsonc = readJson(`${ctx.paths.opencodeConfigFile}c`)
-    assert.deepStrictEqual(opencodeJsonc?.disabled_providers, ["other-provider"])
+    assert.equal(opencodeConfig.disabled_providers?.length, 1)
+    assert.equal(opencodeConfig.disabled_providers[0], "other-provider")
   })
 })
 
