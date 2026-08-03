@@ -41,6 +41,7 @@ export function getPaths() {
     watchdogLogFile: join(dataDir, "logs", "watchdog.log"),
     compatibilityFile: join(dataDir, "compatibility.json"),
     compatibilityCommandCodeFile: join(dataDir, "compatibility.commandcode.json"),
+    enablementFile: join(dataDir, "model-enablement.json"),
     legacyCompatibilityFile: join(PROJECT_DIR, "compatibility.json"),
     legacyEnvFile: join(PROJECT_DIR, ".env.local"),
     opencodeConfigFile: getOpenCodeConfigPath(),

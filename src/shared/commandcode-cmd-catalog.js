@@ -3,6 +3,7 @@ import { accessSync, constants } from "node:fs"
 import { join } from "node:path"
 import { resolveContextWindow } from "./context-windows.js"
 import { FALLBACK_MODEL_REGISTRY, resolveFallbackModelHints } from "./models.js"
+import { deriveCatalogTier } from "./catalog-tier.js"
 
 // Lookup map for display names from fallback registry
 const REGISTRY_NAME_LOOKUP = new Map(
@@ -219,7 +220,7 @@ export function extractCmdContextWindow(description) {
  *
  * @param {Array<{ id: string, name: string, description: string, section: string }>} parsedModels
  * @param {{ filterSection?: string }} options
- * @returns {Array<{ id: string, name: string, context_length: number|null, tags: string[], catalog_capabilities: object }>}
+ * @returns {Array<{ id: string, name: string, context_length: number|null, tags: string[], catalog_capabilities: object, section: string|null, tier: "premium"|"open-source" }>}
  */
 export function buildCmdCatalogRows(parsedModels, { filterSection } = {}) {
   const filtered = filterSection
@@ -245,6 +246,8 @@ export function buildCmdCatalogRows(parsedModels, { filterSection } = {}) {
       context_length: contextWindow,
       tags: [],
       catalog_capabilities: capabilities,
+      section: deriveCatalogTier(model.section, model.id).section,
+      tier: deriveCatalogTier(model.section, model.id).tier,
     }
   })
 }
