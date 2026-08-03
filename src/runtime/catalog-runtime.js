@@ -157,7 +157,7 @@ export function createCatalogController({ initialCompatibilityMatrix, writeCompa
 
       const runOne = async rowIndex => {
         const row = catalog[rowIndex]
-        const { id, name, context_length, catalog_capabilities, tags, section, tier } = row
+        const { id, name, context_length, catalog_capabilities, tags, section, tier, free } = row
         options.onProgress?.({
           provider: "commandcode",
           type: "model-start",
@@ -174,6 +174,7 @@ export function createCatalogController({ initialCompatibilityMatrix, writeCompa
         tested.context_length = resolveContextWindow(id, context_length)
         tested.section = section
         tested.tier = tier
+        tested.free = free ?? previous?.free ?? false
         const previous = compatibilityMatrix?.models?.[id]
 
         if (shouldPreservePreviousCompatibility(tested, previous)) {
@@ -184,6 +185,7 @@ export function createCatalogController({ initialCompatibilityMatrix, writeCompa
             context_length: resolveContextWindow(id, context_length),
             section,
             tier,
+            free: free ?? previous?.free ?? false,
             capabilities: mergeCapabilities(previous?.capabilities, tested.capabilities),
             tested_at: tested.tested_at,
             last_probe_status: tested.status,

@@ -387,4 +387,35 @@ describe("free-model badge propagation", () => {
     })
     assert.equal(derived[0].free, true)
   })
+
+  it("deriveCatalogFromCompatibility preserves free when a probe-style entry lacks the field", () => {
+    // Simulates the probe path assigning tested (no free) after a prior
+    // catalog-only entry that carried free=true; derive must still surface it.
+    const derived = deriveCatalogFromCompatibility({
+      models: {
+        "poolside/laguna-s-2.1-free": {
+          name: "Laguna S 2.1 Free",
+          status: "ok",
+          tier: "open-source",
+          free: true,
+          capabilities: { vision: { supported: null } },
+        },
+      },
+    })
+    assert.equal(derived[0].free, true, "free must survive derive even from a probe-tested entry")
+  })
+
+  it("deriveCatalogFromCompatibility falls back to false when free is absent and no previous", () => {
+    const derived = deriveCatalogFromCompatibility({
+      models: {
+        "deepseek/deepseek-v4-flash": {
+          name: "DeepSeek V4 Flash",
+          status: "ok",
+          tier: "open-source",
+          capabilities: { vision: { supported: null } },
+        },
+      },
+    })
+    assert.equal(derived[0].free, false, "absent free with no previous defaults to false")
+  })
 })
