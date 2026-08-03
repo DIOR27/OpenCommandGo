@@ -81,6 +81,7 @@ export function deriveCatalogFromCompatibility(compatibilityMatrix) {
         id,
         name: info.name || id,
         context_length: resolveContextWindow(id, info.context_length),
+        free: info?.free === true,
         catalog_capabilities: {
           vision: normalizeStoredVisionCapability(info),
           pdf: normalizeStoredPdfCapability(info),

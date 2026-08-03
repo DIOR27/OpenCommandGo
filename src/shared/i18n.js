@@ -40,6 +40,7 @@ const messages = {
     "edit.enabled": "ENABLED",
     "edit.disabled": "DISABLED",
     "edit.hint": "↑↓ navigate  Enter select  e enable/disable  Esc exit",
+    "edit.free": "FREE",
 
     // -- Start --
     "start.refreshing": "Refreshing model catalog...",
@@ -220,6 +221,7 @@ Flags:
     "edit.enabled": "HABILITADO",
     "edit.disabled": "DESHABILITADO",
     "edit.hint": "↑↓ navegar  Enter seleccionar  e habilitar/deshabilitar  Esc salir",
+    "edit.free": "GRATIS",
 
     // -- Start --
     "start.refreshing": "Refrescando catálogo de modelos...",

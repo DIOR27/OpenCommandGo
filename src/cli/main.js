@@ -13,7 +13,7 @@ import { getFreeModelsFromCmd } from "../shared/commandcode-cmd-catalog.js"
 import { fetchDocsModels } from "../shared/fetch-docs-models.js"
 import { readManualCapabilities, setManualCapability, getModelOverrides, applyManualOverrides } from "../config/manual-capabilities.js"
 import { readEnablement, resolveEnabled, toggleEnablement } from "../config/model-enablement.js"
-import { bold } from "../shared/color.js"
+import { bold, green } from "../shared/color.js"
 import { findPidByPort, gracefulKill, isProcessAlive, sleep } from "../shared/process-utils.js"
 
 export async function runCli(args) {
@@ -795,10 +795,12 @@ async function editModelsCommand() {
       const overrides = getModelOverrides(id)
       const hasManual = Object.keys(overrides).length > 0
       const tier = catalog[id]?.tier || "premium"
+      const isFree = catalog[id]?.free === true
       const enabled = resolveEnabled(id, tier, readEnablement())
       const tag = enabled ? t("edit.enabled") : t("edit.disabled")
       const tagDisplay = enabled ? `${BOLD}${tag}${RESET}` : `${DIM}${tag}${RESET}`
-      return `${name}${hasManual ? "  (manual)" : ""}  ${tagDisplay}`
+      const freeLabel = isFree ? ` ${green(t("edit.free"))}` : ""
+      return `${name}${freeLabel}${hasManual ? "  (manual)" : ""}  ${tagDisplay}`
     })
   }
 

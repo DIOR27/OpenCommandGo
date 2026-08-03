@@ -3,7 +3,7 @@ import assert from "node:assert/strict"
 import { comparableCommandCodeModel, resolveBridgeInputModalities, resolveFallbackModelHints } from "../src/shared/models.js"
 import { toCommandCodeMessages } from "../src/runtime/chat-bridge.js"
 import { buildCatalogOnlyCompatibilityEntry, createCatalogController } from "../src/runtime/catalog-runtime.js"
-import { buildCmdCatalogRows } from "../src/shared/commandcode-cmd-catalog.js"
+import { buildCmdCatalogRows, parseCmdModelList } from "../src/shared/commandcode-cmd-catalog.js"
 import { deriveCatalogFromCompatibility, fallbackCatalog, normalizeCatalogRows } from "../src/shared/catalog.js"
 import { filterEnabledModels } from "../src/config/model-enablement.js"
 
@@ -311,5 +311,80 @@ describe("fallback catalog tier", () => {
     const rows = fallbackCatalog()
     const enabled = filterEnabledModels(rows, { enabled: {} })
     assert.equal(enabled.length, rows.length, "all fallback models must be enabled by default")
+  })
+})
+
+describe("free-model badge propagation", () => {
+  it("parseCmdModelList detects the cmd FREE marker into free=true", () => {
+    const parsed = parseCmdModelList([
+      "Open Source",
+      "poolside/laguna-s-2.1-free           FREE  open-weight agentic coding and long-horizon work",
+      "deepseek/deepseek-v4-flash           fast hybrid-attention reasoning",
+      "",
+      "Anthropic",
+      "claude-sonnet-5                      best combo of speed & intelligence",
+    ].join("\n"))
+    const freeRow = parsed.find(m => m.id === "poolside/laguna-s-2.1-free")
+    assert.equal(freeRow?.free, true, "FREE marker must set the free flag on parse")
+    const paidRow = parsed.find(m => m.id === "deepseek/deepseek-v4-flash")
+    assert.equal(paidRow?.free, false)
+  })
+
+  it("buildCmdCatalogRows keeps free=true when the parsed model carries the FREE flag", () => {
+    const [row] = buildCmdCatalogRows([
+      {
+        id: "poolside/laguna-s-2.1-free",
+        name: "Laguna S 2.1 Free",
+        description: "FREE long-horizon coding and long-horizon work",
+        section: "Open Source",
+        free: true,
+      },
+    ])
+    assert.equal(row.free, true, "buildCmdCatalogRows must propagate the free flag")
+  })
+
+  it("buildCatalogOnlyCompatibilityEntry keeps the free flag from the catalog row", () => {
+    const entry = buildCatalogOnlyCompatibilityEntry({
+      id: "poolside/laguna-s-2.1-free",
+      name: "Laguna S 2.1 Free",
+      tags: [],
+      context_length: 64000,
+      catalogCapabilities: { vision: { supported: null, source: null } },
+      section: "Open Source",
+      tier: "open-source",
+      free: true,
+      previous: null,
+    })
+    assert.equal(entry.free, true, "compatibility entry must carry the free badge")
+  })
+
+  it("buildCatalogOnlyCompatibilityEntry preserves free from a legacy entry without the flag", () => {
+    const entry = buildCatalogOnlyCompatibilityEntry({
+      id: "poolside/laguna-s-2.1-free",
+      name: "Laguna S 2.1 Free",
+      tags: [],
+      context_length: 64000,
+      catalogCapabilities: { vision: { supported: null, source: null } },
+      section: "Open Source",
+      tier: "open-source",
+      free: undefined,
+      previous: { free: true },
+    })
+    assert.equal(entry.free, true, "free must be inherited from the previous entry when not re-provided")
+  })
+
+  it("deriveCatalogFromCompatibility surfaces free for each model row", () => {
+    const derived = deriveCatalogFromCompatibility({
+      models: {
+        "poolside/laguna-s-2.1-free": {
+          name: "Laguna S 2.1 Free",
+          status: "catalog_only",
+          tier: "open-source",
+          free: true,
+          capabilities: { vision: { supported: null } },
+        },
+      },
+    })
+    assert.equal(derived[0].free, true)
   })
 })

@@ -116,7 +116,7 @@ export function createCatalogController({ initialCompatibilityMatrix, writeCompa
 
       if (!verifyAvailability || probeMode === "catalog") {
         for (const row of catalog) {
-          const { id, name, context_length, catalog_capabilities, tags, section, tier } = row
+          const { id, name, context_length, catalog_capabilities, tags, section, tier, free } = row
           const previous = compatibilityMatrix?.models?.[id]
           next.models[id] = buildCatalogOnlyCompatibilityEntry({
             id,
@@ -126,6 +126,7 @@ export function createCatalogController({ initialCompatibilityMatrix, writeCompa
             catalogCapabilities: catalog_capabilities,
             section,
             tier,
+            free,
             previous,
           })
         }
@@ -672,7 +673,7 @@ function resolveRefreshConcurrency(value, probeMode, modelCount) {
   return Math.max(1, Math.min(normalized, Math.max(1, modelCount)))
 }
 
-export function buildCatalogOnlyCompatibilityEntry({ id, name, tags, context_length, catalogCapabilities, section, tier, previous }) {
+export function buildCatalogOnlyCompatibilityEntry({ id, name, tags, context_length, catalogCapabilities, section, tier, free, previous }) {
   const contextWindow = resolveContextWindow(id, context_length)
   const previousVision = previous?.capabilities?.vision
   const previousVisionTrusted =
@@ -690,6 +691,7 @@ export function buildCatalogOnlyCompatibilityEntry({ id, name, tags, context_len
     status: "catalog_only",
     section,
     tier,
+    free: free ?? previous?.free ?? false,
     text: previous?.text || { ok: null, output_chars: 0 },
     image: {
       ok: typeof catalogCapabilities?.vision?.supported === "boolean"
