@@ -177,7 +177,7 @@ export async function startServer() {
         const model = requestModel
         return json(res, 403, openAIError(
           "premium_model",
-          `El modelo ${model || "(vacío)"} requiere cobertura premium en tu plan: ${error.message}`,
+          t("error.premium_model", model || "(vacío)", error.message),
         ))
       }
       json(res, 500, openAIError("server_error", error instanceof Error ? error.message : "Error interno"))
