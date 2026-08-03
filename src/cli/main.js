@@ -364,7 +364,7 @@ async function refreshModelsCommand(args = []) {
   const commandCodeUseful = Object.entries(matrix.commandcode?.models || {})
     .filter(([, info]) => info?.status !== "broken")
     .map(([id]) => id)
-  console.log(`CommandCode: ${commandCodeUseful.length} modelos disponibles`)
+  console.log(t("refresh.useful_models", commandCodeUseful.length))
 
   const shouldShowModels = options.showModels || options.provider !== "all"
   if (shouldShowModels) {
@@ -453,7 +453,7 @@ function printModelList(label, modelIds) {
 }
 
 function resolveRefreshProviderLabel(provider) {
-  return "Catálogo CommandCode"
+  return t("refresh.provider_label")
 }
 
 async function resolveRefreshProbeConsent(options) {

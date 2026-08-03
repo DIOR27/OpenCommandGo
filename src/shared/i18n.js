@@ -107,6 +107,10 @@ const messages = {
     "refresh.start": "Refreshing model catalog and compatibility...",
     "refresh.model_start": "[{0}/{1}] {2}...",
     "refresh.model_done": "  -> {0}",
+    "refresh.useful_models": "CommandCode: {0} models available",
+    "refresh.provider_label": "CommandCode catalog",
+    "refresh.probing": "fetching models...",
+    "refresh.models_detected": "{0} models detected",
     "refresh.probe_warning": "Warning: verifying real availability will consume tokens/credits on Command Code.",
     "refresh.probe_confirm": "Continue with probes? [y/N]: ",
 
@@ -283,6 +287,10 @@ Flags:
     "refresh.start": "Refrescando catálogo y compatibilidad de modelos...",
     "refresh.model_start": "[{0}/{1}] {2}...",
     "refresh.model_done": "  -> {0}",
+    "refresh.useful_models": "CommandCode: {0} modelos disponibles",
+    "refresh.provider_label": "Catálogo CommandCode",
+    "refresh.probing": "consultando modelos...",
+    "refresh.models_detected": "{0} modelos detectados",
     "refresh.probe_warning": "Advertencia: verificar disponibilidad real consumirá tokens/créditos de su suscripción Go en Command Code.",
     "refresh.probe_confirm": "¿Desea continuar con los probes? [y/N]: ",
 

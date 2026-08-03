@@ -7,6 +7,7 @@ import { resolveContextWindow } from "../shared/context-windows.js"
 import { COMMANDCODE_PROVIDER, comparableCommandCodeModel, providerlessCommandCodeModel, resolveBridgeCapabilities, resolveBridgeInputModalities } from "../shared/models.js"
 import { callCommandCodeAlpha, collectReasoning, collectText, collectToolCalls } from "./chat-bridge.js"
 import { buildCmdCatalogRows, fetchCmdModelList, parseCmdModelList, resolveCmdBinary } from "../shared/commandcode-cmd-catalog.js"
+import { t } from "../shared/i18n.js"
 import { readResolvedProvidersFromSidecar } from "../opencode/sidecar-resolved-providers.js"
 
 const IMAGE_TEST_URL = "https://upload.wikimedia.org/wikipedia/commons/thumb/3/3a/Cat03.jpg/320px-Cat03.jpg"
@@ -85,13 +86,13 @@ export function createCatalogController({ initialCompatibilityMatrix, writeCompa
       options.onProgress?.({
         provider: "commandcode",
         type: "catalog",
-        message: "consultando modelos...",
+        message: t("refresh.probing"),
       })
       const catalog = await fetchAvailableCatalog(settings)
       options.onProgress?.({
         provider: "commandcode",
         type: "catalog",
-        message: `${catalog.length} modelos detectados`,
+        message: t("refresh.models_detected", catalog.length),
       })
       const next = {
         updated_at: new Date().toISOString(),
