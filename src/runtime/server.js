@@ -129,7 +129,7 @@ export async function startServer() {
 
         const body = await readJson(req)
         if (!body || typeof body !== "object") {
-          return json(res, 400, openAIError("invalid_request_error", "Body JSON inválido"))
+          return json(res, 400, openAIError("invalid_request_error", t("error.invalid_json_body")))
         }
         log(`REQUEST raw model=${body.model || ""} content_summary=${summarizeIncomingMessages(body.messages)}`)
 
@@ -137,11 +137,11 @@ export async function startServer() {
         requestModel = model
         const catalogEntry = commandCodeCatalogController.getAvailableCatalog().find(entry => entry.id === model)
         if (!catalogEntry) {
-          return json(res, 400, openAIError("model_not_allowed", `Modelo no permitido: ${model || "(vacío)"}`))
+          return json(res, 400, openAIError("model_not_allowed", t("error.model_not_allowed", model || "(empty)")))
         }
         requestModelTier = catalogEntry.tier
         if (!resolveEnabled(model, catalogEntry.tier, readEnablement())) {
-          return json(res, 400, openAIError("model_not_allowed", `Modelo deshabilitado: ${model || "(vacío)"}`))
+          return json(res, 400, openAIError("model_not_allowed", t("error.model_disabled", model || "(empty)")))
         }
 
         const compat = compatibilityMatrix?.models?.[model]
@@ -172,17 +172,17 @@ export async function startServer() {
         return
       }
 
-      json(res, 404, openAIError("not_found", `Ruta no soportada: ${req.method} ${url.pathname}`))
+      json(res, 404, openAIError("not_found", t("error.route_not_supported", req.method, url.pathname)))
     } catch (error) {
       log(`ERROR ${error instanceof Error ? error.stack || error.message : String(error)}`)
       if (error instanceof UpstreamError && error.status === 403 && requestModelTier === "premium") {
         const model = requestModel
         return json(res, 403, openAIError(
           "premium_model",
-          t("error.premium_model", model || "(vacío)", error.message),
+          t("error.premium_model", model || "(empty)", error.message),
         ))
       }
-      json(res, 500, openAIError("server_error", error instanceof Error ? error.message : "Error interno"))
+      json(res, 500, openAIError("server_error", error instanceof Error ? error.message : t("error.internal")))
     }
   })
 

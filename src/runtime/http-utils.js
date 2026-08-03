@@ -1,3 +1,5 @@
+import { t } from "../shared/i18n.js"
+
 export const MAX_REQUEST_BYTES = 8 * 1024 * 1024
 
 export function openAIError(code, message) {
@@ -21,8 +23,7 @@ export function readJson(req, { maxBytes = MAX_REQUEST_BYTES } = {}) {
       if (body.length > maxBytes) {
         req.destroy()
         reject(new Error("Body demasiado grande"))
-      }
-    })
+      }    })
     req.on("end", () => {
       try {
         resolve(body ? JSON.parse(body) : {})
@@ -37,13 +38,13 @@ export function readJson(req, { maxBytes = MAX_REQUEST_BYTES } = {}) {
 export function requireShimAuth(req, res, settings) {
   const expected = String(settings.shimAccessToken || "").trim()
   if (!expected) {
-    json(res, 500, openAIError("server_error", "Falta token interno del shim"))
+    json(res, 500, openAIError("server_error", t("error.shim_token_missing")))
     return false
   }
 
   const provided = getRequestShimToken(req)
   if (provided !== expected) {
-    json(res, 401, openAIError("unauthorized", "Token del shim inválido o faltante"))
+    json(res, 401, openAIError("unauthorized", t("error.shim_token_invalid")))
     return false
   }
 

@@ -18,7 +18,6 @@ const messages = {
     // -- Docs models --
 
     "docs.fetching": "Fetching model catalog from Command Code documentation...",
-    "docs.found": "Found {0} model categories:",
     "docs.error": "Could not fetch docs: {0}",
     "docs.applied": "Applied capabilities for {0} Open Source models from docs.",
     "docs.synced": "OpenCode config synced with doc-based capabilities.",
@@ -28,13 +27,6 @@ const messages = {
     "edit.no_models": "No models in catalog. Run --refresh-models first.",
     "edit.no_tty": "This command requires an interactive terminal.",
     "edit.header": "----- MODELS -----",
-    "edit.prompt": "Model to edit (or Enter to exit): ",
-    "edit.model_header": "----- {0} -----",
-    "edit.back": "Back",
-    "edit.cap_prompt": "capability on/off (or Enter to go back): ",
-    "edit.invalid": "Expected: capability on/off. Example: vision on",
-    "edit.invalid_cap": "Valid capabilities: vision pdf audio video reasoning",
-    "edit.invalid_val": "Use 'on' or 'off'",
     "edit.synced": "OpenCode config re-synced with manual overrides.",
     "edit.sync_failed": "Could not re-sync OpenCode config. Run --refresh-models later.",
     "edit.enabled": "ENABLED",
@@ -59,7 +51,6 @@ const messages = {
     "server.listening": "OCG listening on http://{0}:{1}",
 
     // -- Stop --
-    "stop.no_pid": "No PID saved.",
     "stop.already_gone": "Process no longer existed; cleaned PID.",
     "stop.stopped": "OpenCommandGo stopped (PID {0}).",
     "stop.graceful": "Stopping OpenCommandGo (PID {0})...",
@@ -114,10 +105,8 @@ const messages = {
 
     // -- Refresh --
     "refresh.start": "Refreshing model catalog and compatibility...",
-    "refresh.catalog": "Catalog: {0}",
     "refresh.model_start": "[{0}/{1}] {2}...",
     "refresh.model_done": "  -> {0}",
-    "refresh.complete": "Refresh complete. Useful models: {0}",
     "refresh.probe_warning": "Warning: verifying real availability will consume tokens/credits on Command Code.",
     "refresh.probe_confirm": "Continue with probes? [y/N]: ",
 
@@ -132,8 +121,15 @@ const messages = {
     "error.upstream": "Command Code responded {0}: {1}",
     "error.upstream_no_body": "Command Code did not return a streaming body",
     "error.upstream_stream": "Command Code stream error: {0}",
-    "error.upstream_models": "models {0}",
     "error.premium_model": "The model {0} requires premium coverage in your plan: {1}",
+    "error.invalid_json_body": "Invalid JSON body",
+    "error.model_not_allowed": "Model not allowed: {0}",
+    "error.model_disabled": "Model disabled: {0}",
+    "error.route_not_supported": "Route not supported: {0} {1}",
+    "error.internal": "Internal server error",
+    "error.body_too_large": "Request body too large",
+    "error.shim_token_missing": "Missing internal shim token",
+    "error.shim_token_invalid": "Invalid or missing internal shim token",
 
     // -- Help --
     "help.text": `${bold("proxy.js")}
@@ -180,7 +176,6 @@ Flags:
     "logs.watchdog_header": "Watchdog log: {0}",
     "logs.lines": "Last {0} lines:",
     "logs.following": "Following (Ctrl+C to stop)...",
-    "logs.usage": "Usage: node proxy.js --logs [--lines N] [--follow|-f] [--watchdog]",
   },
 
   es: {
@@ -199,7 +194,6 @@ Flags:
 
     // -- Docs models --
     "docs.fetching": "Obteniendo catálogo de modelos desde la documentación de Command Code...",
-    "docs.found": "Se encontraron {0} categorías de modelos:",
     "docs.error": "No se pudo obtener la documentación: {0}",
     "docs.applied": "Se aplicaron capabilities de {0} modelos Open Source desde la documentación.",
     "docs.synced": "Config de OpenCode sincronizada con capabilities de la documentación.",
@@ -209,13 +203,6 @@ Flags:
     "edit.no_models": "No hay modelos en el catálogo. Ejecutá --refresh-models primero.",
     "edit.no_tty": "Este comando requiere una terminal interactiva.",
     "edit.header": "----- MODELOS -----",
-    "edit.prompt": "Modelo a editar (o Enter para salir): ",
-    "edit.model_header": "----- {0} -----",
-    "edit.back": "Volver",
-    "edit.cap_prompt": "capacidad on/off (o Enter para volver): ",
-    "edit.invalid": "Se esperaba: capacidad on/off. Ejemplo: vision on",
-    "edit.invalid_cap": "Capacidades válidas: vision pdf audio video reasoning",
-    "edit.invalid_val": "Usá 'on' o 'off'",
     "edit.synced": "Config de OpenCode resincronizada con overrides manuales.",
     "edit.sync_failed": "No se pudo resincronizar OpenCode. Ejecutá --refresh-models después.",
     "edit.enabled": "HABILITADO",
@@ -240,7 +227,6 @@ Flags:
     "server.listening": "OCG escuchando en http://{0}:{1}",
 
     // -- Stop --
-    "stop.no_pid": "No hay PID guardado.",
     "stop.already_gone": "El proceso ya no existía; limpié el PID.",
     "stop.stopped": "OpenCommandGo detenido (PID {0}).",
     "stop.graceful": "Deteniendo OpenCommandGo (PID {0})...",
@@ -295,10 +281,8 @@ Flags:
 
     // -- Refresh --
     "refresh.start": "Refrescando catálogo y compatibilidad de modelos...",
-    "refresh.catalog": "Catálogo: {0}",
     "refresh.model_start": "[{0}/{1}] {2}...",
     "refresh.model_done": "  -> {0}",
-    "refresh.complete": "Refresh completo. Modelos disponibles: {0}",
     "refresh.probe_warning": "Advertencia: verificar disponibilidad real consumirá tokens/créditos de su suscripción Go en Command Code.",
     "refresh.probe_confirm": "¿Desea continuar con los probes? [y/N]: ",
 
@@ -313,8 +297,15 @@ Flags:
     "error.upstream": "Command Code respondió {0}: {1}",
     "error.upstream_no_body": "Command Code no devolvió body de streaming",
     "error.upstream_stream": "Error en stream de Command Code: {0}",
-    "error.upstream_models": "models {0}",
     "error.premium_model": "El modelo {0} requiere cobertura premium en tu plan: {1}",
+    "error.invalid_json_body": "Body JSON inválido",
+    "error.model_not_allowed": "Modelo no permitido: {0}",
+    "error.model_disabled": "Modelo deshabilitado: {0}",
+    "error.route_not_supported": "Ruta no soportada: {0} {1}",
+    "error.internal": "Error interno",
+    "error.body_too_large": "Body demasiado grande",
+    "error.shim_token_missing": "Falta token interno del shim",
+    "error.shim_token_invalid": "Token del shim inválido o faltante",
 
     // -- Help --
     "help.text": `${bold("proxy.js")}
@@ -361,7 +352,6 @@ Flags:
     "logs.watchdog_header": "Watchdog log: {0}",
     "logs.lines": "Últimas {0} líneas:",
     "logs.following": "Siguiendo (Ctrl+C para detener)...",
-    "logs.usage": "Uso: node proxy.js --logs [--lines N] [--follow|-f] [--watchdog]",
   },
 }
 
