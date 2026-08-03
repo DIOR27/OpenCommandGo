@@ -81,6 +81,38 @@ describe("model enablement store", () => {
     )
   })
 
+  it("first toggle on a default-enabled open-source model disables it (tier-aware)", () => {
+    toggleEnablement("deepseek/deepseek-v4-flash", "open-source")
+    assert.equal(
+      resolveEnabled("deepseek/deepseek-v4-flash", "open-source", readEnablement()),
+      false,
+      "first toggle must disable a default-enabled open-source model, not write true",
+    )
+
+    toggleEnablement("deepseek/deepseek-v4-flash", "open-source")
+    assert.equal(
+      resolveEnabled("deepseek/deepseek-v4-flash", "open-source", readEnablement()),
+      true,
+      "second toggle re-enables it",
+    )
+  })
+
+  it("toggleEnablement derives tier by family heuristic when no tier is passed", () => {
+    toggleEnablement("deepseek/deepseek-v4-flash")
+    assert.equal(
+      resolveEnabled("deepseek/deepseek-v4-flash", "open-source", readEnablement()),
+      false,
+      "family heuristic must treat deepseek as open-source (default enabled)",
+    )
+
+    toggleEnablement("claude-sonnet-5")
+    assert.equal(
+      resolveEnabled("claude-sonnet-5", "premium", readEnablement()),
+      true,
+      "family heuristic must treat claude as premium (default disabled)",
+    )
+  })
+
   it("resetEnablement removes the store file and restores defaults", () => {
     setEnabled("anthropic/claude-sonnet-5", true)
     assert.ok(existsSync(getPaths().enablementFile))

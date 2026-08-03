@@ -859,7 +859,7 @@ async function editModelsCommand() {
         render()
       } else if (key === "e" && state === "models") { // Enable/disable toggle
         const modelId = modelIds[cursor]
-        toggleEnablement(modelId)
+        toggleEnablement(modelId, catalog[modelId]?.tier)
         changed = true
         render()
       } else if (key === "\r" || key === "\n") { // Enter

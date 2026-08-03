@@ -8,6 +8,7 @@
 
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { getPaths, ensureDir } from "./paths.js"
+import { deriveCatalogTier } from "../shared/catalog-tier.js"
 
 const STORE_VERSION = 1
 
@@ -72,10 +73,14 @@ export function setEnabled(modelId, value) {
 
 /**
  * Flip the explicit enabled flag for a model.
+ * The current effective state is derived from the model's tier so a
+ * default-enabled open-source model toggles to disabled (and vice versa).
  * @param {string} modelId
+ * @param {"premium"|"open-source"} [tier]
  */
-export function toggleEnablement(modelId) {
-  setEnabled(modelId, !resolveEnabled(modelId, "premium", readEnablement()))
+export function toggleEnablement(modelId, tier) {
+  const resolvedTier = tier || deriveCatalogTier(undefined, modelId).tier
+  setEnabled(modelId, !resolveEnabled(modelId, resolvedTier, readEnablement()))
 }
 
 /**

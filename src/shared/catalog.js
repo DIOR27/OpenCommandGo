@@ -10,34 +10,38 @@ export function extractModelRows(data) {
 }
 
 export function fallbackCatalog() {
-  return FALLBACK_MODEL_REGISTRY.map(model => ({
-    id: model.id,
-    name: model.name,
-    context_length: resolveContextWindow(model.id),
-    tags: [],
-    catalog_capabilities: {
-      vision: {
-        supported: null,
-        source: null,
+  return FALLBACK_MODEL_REGISTRY.map(model => {
+    const { tier } = deriveCatalogTier(undefined, model.id)
+    return {
+      id: model.id,
+      name: model.name,
+      context_length: resolveContextWindow(model.id),
+      tier,
+      tags: [],
+      catalog_capabilities: {
+        vision: {
+          supported: null,
+          source: null,
+        },
+        pdf: {
+          supported: null,
+          source: null,
+        },
+        audio: {
+          supported: null,
+          source: null,
+        },
+        video: {
+          supported: null,
+          source: null,
+        },
+        reasoning: {
+          supported: null,
+          source: null,
+        },
       },
-      pdf: {
-        supported: null,
-        source: null,
-      },
-      audio: {
-        supported: null,
-        source: null,
-      },
-      video: {
-        supported: null,
-        source: null,
-      },
-      reasoning: {
-        supported: null,
-        source: null,
-      },
-    },
-  }))
+    }
+  })
 }
 
 export function normalizeCatalogRows(rawModels) {

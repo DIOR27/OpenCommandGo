@@ -4,7 +4,8 @@ import { comparableCommandCodeModel, resolveBridgeInputModalities, resolveFallba
 import { toCommandCodeMessages } from "../src/runtime/chat-bridge.js"
 import { buildCatalogOnlyCompatibilityEntry, createCatalogController } from "../src/runtime/catalog-runtime.js"
 import { buildCmdCatalogRows } from "../src/shared/commandcode-cmd-catalog.js"
-import { deriveCatalogFromCompatibility, normalizeCatalogRows } from "../src/shared/catalog.js"
+import { deriveCatalogFromCompatibility, fallbackCatalog, normalizeCatalogRows } from "../src/shared/catalog.js"
+import { filterEnabledModels } from "../src/config/model-enablement.js"
 
 describe("xiaomi mimo capability separation", () => {
   it("mimo-v2-5-pro does not inherit vision/pdf from mimo-v2-5 family hint", () => {
@@ -294,5 +295,21 @@ describe("runtime vision upgrade (promoteModelVision)", () => {
     })
     assert.equal(entry.capabilities.vision.supported, true, "runtime_upgrade should survive catalog refresh")
     assert.equal(entry.capabilities.vision.source, "runtime_upgrade")
+  })
+})
+
+describe("fallback catalog tier", () => {
+  it("fallback rows carry an open-source tier so the enable filter keeps them by default", () => {
+    const rows = fallbackCatalog()
+    assert.ok(rows.length > 0, "fallback registry must not be empty")
+    for (const row of rows) {
+      assert.equal(row.tier, "open-source", `${row.id} must default to open-source tier`)
+    }
+  })
+
+  it("fallback rows pass the central enable filter with an empty store", () => {
+    const rows = fallbackCatalog()
+    const enabled = filterEnabledModels(rows, { enabled: {} })
+    assert.equal(enabled.length, rows.length, "all fallback models must be enabled by default")
   })
 })
