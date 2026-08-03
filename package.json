@@ -11,7 +11,7 @@
     "README.md"
   ],
   "scripts": {
-    "start": "node shim.js",
+    "start": "node proxy.js",
     "test": "node --test",
     "pack:dry-run": "npm pack --dry-run"
   },

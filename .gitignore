@@ -4,3 +4,5 @@ nul
 .atl/
 .commandcode/
 openspec/
+# Runtime data (local dev apps)
+.freebuff/

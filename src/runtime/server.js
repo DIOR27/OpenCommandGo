@@ -47,6 +47,7 @@ export async function startServer() {
 
   const server = createServer(async (req, res) => {
     let requestModel = null
+    let requestModelTier = null
     try {
       if (req.method === "OPTIONS") {
         res.writeHead(204)
@@ -138,6 +139,7 @@ export async function startServer() {
         if (!catalogEntry) {
           return json(res, 400, openAIError("model_not_allowed", `Modelo no permitido: ${model || "(vacío)"}`))
         }
+        requestModelTier = catalogEntry.tier
         if (!resolveEnabled(model, catalogEntry.tier, readEnablement())) {
           return json(res, 400, openAIError("model_not_allowed", `Modelo deshabilitado: ${model || "(vacío)"}`))
         }
@@ -173,7 +175,7 @@ export async function startServer() {
       json(res, 404, openAIError("not_found", `Ruta no soportada: ${req.method} ${url.pathname}`))
     } catch (error) {
       log(`ERROR ${error instanceof Error ? error.stack || error.message : String(error)}`)
-      if (error instanceof UpstreamError && error.status === 403) {
+      if (error instanceof UpstreamError && error.status === 403 && requestModelTier === "premium") {
         const model = requestModel
         return json(res, 403, openAIError(
           "premium_model",
@@ -225,7 +227,10 @@ export async function startServer() {
   fetchCommandCodeUsage().then(usage => {
     const line = formatUsageLine(usage)
     if (line) setPersistentStatus(line)
-  }).catch(() => {})
+    else if (process.stdout.isTTY) setPersistentStatus("")
+  }).catch(() => {
+    if (process.stdout.isTTY) setPersistentStatus("")
+  })
 
   return server
 }

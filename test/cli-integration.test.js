@@ -686,6 +686,32 @@ describe("ocg enablement filtering (FR-04/FR-05)", () => {
     assert.match(response.json.error?.message, /anthropic\/claude-sonnet-5/)
     assert.match(response.json.error?.message, /premium/i)
   })
+
+  it("upstream 403 on an open-source model is NOT mislabeled as premium_model", { timeout: 20000 }, async () => {
+    const mock = await startMockCommandCodeServer()
+    const ctx = createIsolatedCliContext(await getFreePort(), mock.port)
+    registerCleanup(ctx, mock)
+
+    await runCli(["--background"], ctx.env)
+    const secrets = readJson(ctx.paths.secretsFile)
+    await waitForHealth(ctx.port, secrets.shimAccessToken)
+
+    mock.enqueueAlphaResponse({
+      status: 403,
+      body: JSON.stringify({ error: { message: "some upstream 403 unrelated to plan coverage" } }),
+    })
+
+    const response = await postJson(`http://127.0.0.1:${ctx.port}/v1/chat/completions`, {
+      model: "xiaomi/MiMo-V2.5",
+      messages: [{ role: "user", content: "hola" }],
+    }, secrets.shimAccessToken)
+
+    assert.equal(response.status, 500, "open-source 403 must fall through to the generic upstream error path")
+    assert.notEqual(response.json.error?.type, "premium_model")
+    assert.equal(response.json.error?.type, "server_error")
+    assert.match(response.json.error?.message, /403/)
+    assert.doesNotMatch(response.json.error?.message, /cobertura premium|premium coverage|requires premium/i)
+  })
 })
 
 function seedEnablementStore(ctx, enabled) {

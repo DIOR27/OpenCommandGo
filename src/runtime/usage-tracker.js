@@ -40,7 +40,7 @@ async function runCmdUsage() {
   return new Promise((resolve) => {
     let child
     try {
-      child = spawn("script", ["-qec", "cmd /usage", "/dev/null"], {
+      child = spawn("script", ["-qec", "cmd --trust /usage", "/dev/null"], {
         stdio: ["ignore", "pipe", "pipe"],
         windowsHide: true,
       })
