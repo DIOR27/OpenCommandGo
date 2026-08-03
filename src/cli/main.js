@@ -12,6 +12,7 @@ import { COMMANDCODE_PROVIDER } from "../shared/models.js"
 import { getFreeModelsFromCmd } from "../shared/commandcode-cmd-catalog.js"
 import { fetchDocsModels } from "../shared/fetch-docs-models.js"
 import { readManualCapabilities, setManualCapability, getModelOverrides, applyManualOverrides } from "../config/manual-capabilities.js"
+import { readEnablement, resolveEnabled, toggleEnablement } from "../config/model-enablement.js"
 import { bold } from "../shared/color.js"
 import { findPidByPort, gracefulKill, isProcessAlive, sleep } from "../shared/process-utils.js"
 
@@ -732,6 +733,33 @@ const CAP_NAMES = ["vision", "pdf", "audio", "video", "reasoning"]
 const CAP_TOGGLE_CHARS = { true: "\u25A3", false: "\u25A1" } // ▣ □
 const CAP_DISPLAY = { true: "\u25A3", false: "\u25A1", null: "\u25A1", undefined: "\u25A1" } // unknown → □
 
+/**
+ * Resolve the actual capability state for a model.
+ * Explicit override wins, otherwise the catalog value, otherwise null (unknown).
+ * @param {Record<string, boolean>} overrides
+ * @param {Record<string, any>} caps
+ * @param {string} cap
+ * @returns {boolean|null}
+ */
+export function resolveCapActual(overrides, caps, cap) {
+  if (overrides[cap] !== undefined) return overrides[cap]
+  const supported = caps[cap]?.supported
+  return supported === undefined ? null : supported
+}
+
+/**
+ * Next override for a capability toggle (2-state).
+ * No explicit override -> set the opposite of the actual value (null/unknown -> enable).
+ * Existing explicit override -> clear it back to null (no tri-state flip).
+ * @param {boolean|null} actual
+ * @param {boolean|undefined} override
+ * @returns {boolean|null}
+ */
+export function nextCapOverride(actual, override) {
+  if (override !== undefined) return null
+  return actual === true ? false : true
+}
+
 async function editModelsCommand() {
   if (!stdin.isTTY) {
     console.log(t("edit.no_tty"))
@@ -766,7 +794,11 @@ async function editModelsCommand() {
       const name = catalog[id]?.name || id
       const overrides = getModelOverrides(id)
       const hasManual = Object.keys(overrides).length > 0
-      return `${name}${hasManual ? "  (manual)" : ""}`
+      const tier = catalog[id]?.tier || "premium"
+      const enabled = resolveEnabled(id, tier, readEnablement())
+      const tag = enabled ? t("edit.enabled") : t("edit.disabled")
+      const tagDisplay = enabled ? `${BOLD}${tag}${RESET}` : `${DIM}${tag}${RESET}`
+      return `${name}${hasManual ? "  (manual)" : ""}  ${tagDisplay}`
     })
   }
 
@@ -793,7 +825,7 @@ async function editModelsCommand() {
         const prefix = i === cursor ? `${INVERT} ${CURSOR_CH} ${RESET}` : "   "
         process.stdout.write(`${prefix}${items[i]}\n`)
       }
-      process.stdout.write(`\n${DIM}↑↓ navigate  Enter select  Esc exit${RESET}`)
+      process.stdout.write(`\n${DIM}${t("edit.hint")}${RESET}`)
     } else {
       process.stdout.write(`${BOLD}----- ${currentDisplayName} -----${RESET}\n\n`)
       const items = getCapabilityItems()
@@ -825,6 +857,11 @@ async function editModelsCommand() {
       } else if (key === "\u001b[B") { // Down
         cursor = (cursor + 1) % items.length
         render()
+      } else if (key === "e" && state === "models") { // Enable/disable toggle
+        const modelId = modelIds[cursor]
+        toggleEnablement(modelId)
+        changed = true
+        render()
       } else if (key === "\r" || key === "\n") { // Enter
         if (state === "models") {
           currentModelId = modelIds[cursor]
@@ -832,20 +869,13 @@ async function editModelsCommand() {
           state = "capabilities"
           cursor = 0
         } else {
-          // Toggle capability
+          // Toggle capability (2-state)
           const capName = CAP_NAMES[cursor]
           const overrides = getModelOverrides(currentModelId)
           const currentCaps = catalog[currentModelId]?.capabilities || {}
-          const currentOverride = overrides[capName]
-          const currentActual = currentOverride ?? currentCaps[capName]?.supported ?? null
-
-          if (currentOverride === undefined) {
-            setManualCapability(currentModelId, capName, !currentActual)
-          } else if (currentOverride === !currentActual) {
-            setManualCapability(currentModelId, capName, null)
-          } else {
-            setManualCapability(currentModelId, capName, !currentOverride)
-          }
+          const actual = resolveCapActual(overrides, currentCaps, capName)
+          const next = nextCapOverride(actual, overrides[capName])
+          setManualCapability(currentModelId, capName, next)
           changed = true
         }
         render()

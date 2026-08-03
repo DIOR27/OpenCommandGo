@@ -37,6 +37,9 @@ const messages = {
     "edit.invalid_val": "Use 'on' or 'off'",
     "edit.synced": "OpenCode config re-synced with manual overrides.",
     "edit.sync_failed": "Could not re-sync OpenCode config. Run --refresh-models later.",
+    "edit.enabled": "ENABLED",
+    "edit.disabled": "DISABLED",
+    "edit.hint": "↑↓ navigate  Enter select  e enable/disable  Esc exit",
 
     // -- Start --
     "start.refreshing": "Refreshing model catalog...",
@@ -129,6 +132,7 @@ const messages = {
     "error.upstream_no_body": "Command Code did not return a streaming body",
     "error.upstream_stream": "Command Code stream error: {0}",
     "error.upstream_models": "models {0}",
+    "error.premium_model": "The model {0} requires premium coverage in your plan: {1}",
 
     // -- Help --
     "help.text": `${bold("proxy.js")}
@@ -213,6 +217,9 @@ Flags:
     "edit.invalid_val": "Usá 'on' o 'off'",
     "edit.synced": "Config de OpenCode resincronizada con overrides manuales.",
     "edit.sync_failed": "No se pudo resincronizar OpenCode. Ejecutá --refresh-models después.",
+    "edit.enabled": "HABILITADO",
+    "edit.disabled": "DESHABILITADO",
+    "edit.hint": "↑↓ navegar  Enter seleccionar  e habilitar/deshabilitar  Esc salir",
 
     // -- Start --
     "start.refreshing": "Refrescando catálogo de modelos...",
@@ -305,6 +312,7 @@ Flags:
     "error.upstream_no_body": "Command Code no devolvió body de streaming",
     "error.upstream_stream": "Error en stream de Command Code: {0}",
     "error.upstream_models": "models {0}",
+    "error.premium_model": "El modelo {0} requiere cobertura premium en tu plan: {1}",
 
     // -- Help --
     "help.text": `${bold("proxy.js")}
@@ -356,6 +364,8 @@ Flags:
 }
 
 import { colorizeStatus, bold } from "./color.js"
+
+export { messages }
 
 function detectLocale() {
   try {
