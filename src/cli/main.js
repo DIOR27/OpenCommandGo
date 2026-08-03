@@ -730,7 +730,6 @@ async function docsModelsCommand() {
 }
 
 const CAP_NAMES = ["vision", "pdf", "audio", "video", "reasoning"]
-const CAP_TOGGLE_CHARS = { true: "\u25A3", false: "\u25A1" } // ▣ □
 const CAP_DISPLAY = { true: "\u25A3", false: "\u25A1", null: "\u25A1", undefined: "\u25A1" } // unknown → □
 
 /**

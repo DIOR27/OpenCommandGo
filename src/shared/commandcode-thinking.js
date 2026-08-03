@@ -1,20 +1,8 @@
-import { supportsKnownReasoningToggle } from "./models.js"
+import { comparableCommandCodeModel, providerlessCommandCodeModel, supportsKnownReasoningToggle } from "./models.js"
 
 export const COMMAND_CODE_EFFORT_LEVELS = ["low", "medium", "high", "xhigh", "max"]
 
 const INTERLEAVED_REASONING_FIELD = "reasoning_content"
-
-export function comparableCommandCodeModel(model) {
-  return String(model || "").trim().toLowerCase().replace(/[._]/g, "-")
-}
-
-export function providerlessCommandCodeModel(model) {
-  return comparableCommandCodeModel(model).split("/").pop() ?? comparableCommandCodeModel(model)
-}
-
-export function isCommandCodeClaudeModel(model) {
-  return comparableCommandCodeModel(model).includes("claude")
-}
 
 function isCommandCodeClaudeHaiku(model) {
   const normalized = comparableCommandCodeModel(model)
