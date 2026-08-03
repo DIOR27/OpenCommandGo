@@ -1,4 +1,4 @@
-import { syncOpenCodeConfig } from "../opencode/config.js"
+import { buildCommandCodeProviderConfig, syncOpenCodeConfig } from "../opencode/config.js"
 import { applyManualOverrides } from "../config/manual-capabilities.js"
 import { filterEnabledModels, readEnablement } from "../config/model-enablement.js"
 import { deriveCatalogFromCompatibility, extractModelRows, fallbackCatalog, normalizeCatalogRows } from "../shared/catalog.js"
@@ -28,15 +28,7 @@ export function createCatalogController({ initialCompatibilityMatrix, writeCompa
       await syncOpenCodeConfig({
         host: settings.host,
         port: settings.port,
-        providers: [
-          {
-            id: settings.providerId,
-            kind: "commandcode",
-            routePrefix: COMMANDCODE_PROVIDER.routePrefix,
-            name: COMMANDCODE_PROVIDER.name,
-            compatibilityMatrix,
-          },
-        ],
+        providers: buildCommandCodeProviderConfig({ providerId: settings.providerId, compatibilityMatrix }),
         createIfMissing: true,
       })
     },
@@ -138,15 +130,7 @@ export function createCatalogController({ initialCompatibilityMatrix, writeCompa
         await syncOpenCodeConfig({
           host: settings.host,
           port: settings.port,
-          providers: [
-            {
-              id: settings.providerId,
-              kind: "commandcode",
-              routePrefix: COMMANDCODE_PROVIDER.routePrefix,
-              name: COMMANDCODE_PROVIDER.name,
-              compatibilityMatrix,
-            },
-          ],
+          providers: buildCommandCodeProviderConfig({ providerId: settings.providerId, compatibilityMatrix }),
           createIfMissing: true,
         })
         log(`COMPAT refresh_done models=${Object.keys(next.models).length} mode=catalog`)
@@ -231,15 +215,7 @@ export function createCatalogController({ initialCompatibilityMatrix, writeCompa
       await syncOpenCodeConfig({
         host: settings.host,
         port: settings.port,
-        providers: [
-          {
-            id: settings.providerId,
-            kind: "commandcode",
-            routePrefix: COMMANDCODE_PROVIDER.routePrefix,
-            name: COMMANDCODE_PROVIDER.name,
-            compatibilityMatrix,
-          },
-        ],
+        providers: buildCommandCodeProviderConfig({ providerId: settings.providerId, compatibilityMatrix }),
         createIfMissing: true,
       })
       log(`COMPAT refresh_done models=${Object.keys(next.models).length}`)

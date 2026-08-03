@@ -5,10 +5,9 @@ import { stdin, stdout } from "node:process"
 import { fileURLToPath } from "node:url"
 import { clearPid, clearWatchdogPid, getRuntimeSettings, readCompatibilityMatrix, readConfig, readPid, readSecrets, readWatchdogPid, writeConfig, writePid, writeSecrets, writeWatchdogPid } from "../config/store.js"
 import { getPaths } from "../config/paths.js"
-import { detectOpenCodeInstallations, inspectOpenCodeProvider, removeOpenCodeProvider, syncOpenCodeConfig } from "../opencode/config.js"
+import { buildCommandCodeProviderConfig, detectOpenCodeInstallations, inspectOpenCodeProvider, removeOpenCodeProvider, syncOpenCodeConfig } from "../opencode/config.js"
 import { refreshModelCatalogNow, startServer } from "../runtime/server.js"
 import { getLocale, t } from "../shared/i18n.js"
-import { COMMANDCODE_PROVIDER } from "../shared/models.js"
 import { getFreeModelsFromCmd } from "../shared/commandcode-cmd-catalog.js"
 import { fetchDocsModels } from "../shared/fetch-docs-models.js"
 import { readManualCapabilities, setManualCapability, getModelOverrides, applyManualOverrides } from "../config/manual-capabilities.js"
@@ -106,15 +105,7 @@ async function runSetup() {
       const target = await syncOpenCodeConfig({
         host: nextConfig.host,
         port: nextConfig.port,
-        providers: [
-          {
-            id: nextConfig.providerId,
-            kind: "commandcode",
-            routePrefix: COMMANDCODE_PROVIDER.routePrefix,
-            name: COMMANDCODE_PROVIDER.name,
-            compatibilityMatrix: readCompatibilityMatrix("commandcode"),
-          },
-        ],
+        providers: buildCommandCodeProviderConfig({ providerId: nextConfig.providerId, compatibilityMatrix: readCompatibilityMatrix("commandcode") }),
         createIfMissing: true,
       })
       if (target) console.log(t("setup.synced", target))
@@ -701,20 +692,13 @@ async function docsModelsCommand() {
     const settings = getRuntimeSettings()
     if (settings) {
       try {
-        const { syncOpenCodeConfig } = await import("../opencode/config.js")
-        const { COMMANDCODE_PROVIDER } = await import("../shared/models.js")
+        const { buildCommandCodeProviderConfig, syncOpenCodeConfig } = await import("../opencode/config.js")
         const matrix = readCompatibilityMatrix("commandcode")
         applyManualOverrides(matrix.models)
         await syncOpenCodeConfig({
           host: settings.host,
           port: settings.port,
-          providers: [{
-            id: settings.providerId,
-            kind: "commandcode",
-            routePrefix: COMMANDCODE_PROVIDER.routePrefix,
-            name: COMMANDCODE_PROVIDER.name,
-            compatibilityMatrix: matrix,
-          }],
+          providers: buildCommandCodeProviderConfig({ providerId: settings.providerId, compatibilityMatrix: matrix }),
           createIfMissing: true,
         })
         console.log(t("docs.synced"))
@@ -900,20 +884,13 @@ async function editModelsCommand() {
     const settings = getRuntimeSettings()
     if (settings) {
       try {
-        const { syncOpenCodeConfig } = await import("../opencode/config.js")
-        const { COMMANDCODE_PROVIDER } = await import("../shared/models.js")
+        const { buildCommandCodeProviderConfig, syncOpenCodeConfig } = await import("../opencode/config.js")
         const updatedMatrix = readCompatibilityMatrix("commandcode")
         applyManualOverrides(updatedMatrix.models)
         await syncOpenCodeConfig({
           host: settings.host,
           port: settings.port,
-          providers: [{
-            id: settings.providerId,
-            kind: "commandcode",
-            routePrefix: COMMANDCODE_PROVIDER.routePrefix,
-            name: COMMANDCODE_PROVIDER.name,
-            compatibilityMatrix: updatedMatrix,
-          }],
+          providers: buildCommandCodeProviderConfig({ providerId: settings.providerId, compatibilityMatrix: updatedMatrix }),
           createIfMissing: true,
         })
         console.log(t("edit.synced"))

@@ -159,6 +159,24 @@ function buildProviderConfig({ host, port, provider, token }) {
   }
 }
 
+/**
+ * Build the canonical commandcode provider spec list passed to
+ * syncOpenCodeConfig. Single source of truth for the duplicated
+ * providers:[{ id, kind, routePrefix, name, compatibilityMatrix }] shape
+ * used at every sync call site.
+ */
+export function buildCommandCodeProviderConfig({ providerId, compatibilityMatrix } = {}) {
+  return [
+    {
+      id: providerId ?? COMMANDCODE_PROVIDER.id,
+      kind: "commandcode",
+      routePrefix: COMMANDCODE_PROVIDER.routePrefix,
+      name: COMMANDCODE_PROVIDER.name,
+      compatibilityMatrix,
+    },
+  ]
+}
+
 function buildCrossProviderSources({ runtimeProviders, existingProviders, excludeIds }) {
   const sources = []
   const comparableRuntimeProviders = buildComparableProviderModels(runtimeProviders, excludeIds)

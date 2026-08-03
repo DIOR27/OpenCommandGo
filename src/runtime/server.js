@@ -6,7 +6,7 @@ import { COMMANDCODE_PROVIDER, resolveBridgeInputModalities } from "../shared/mo
 import { t } from "../shared/i18n.js"
 import { buildOpenAICompletion, callCommandCodeAlpha, startCommandCodeAlphaStream, streamOpenAIResponse, summarizeIncomingMessages, UpstreamError } from "./chat-bridge.js"
 import { createCatalogController } from "./catalog-runtime.js"
-import { syncOpenCodeConfig } from "../opencode/config.js"
+import { buildCommandCodeProviderConfig, syncOpenCodeConfig } from "../opencode/config.js"
 import { fetchCommandCodeUsage, formatUsageLine, getCachedUsage, isUsageFresh } from "./usage-tracker.js"
 import { isLoopbackHost, json, openAIError, readJson, requireShimAuth } from "./http-utils.js"
 import { installProcessLifecycleHandlers } from "./lifecycle.js"
@@ -204,15 +204,7 @@ export async function startServer() {
   syncOpenCodeConfig({
     host: settings.host,
     port: settings.port,
-    providers: [
-      {
-        id: settings.providerId,
-        kind: "commandcode",
-        routePrefix: COMMANDCODE_PROVIDER.routePrefix,
-        name: COMMANDCODE_PROVIDER.name,
-        compatibilityMatrix: syncMatrix,
-      },
-    ],
+    providers: buildCommandCodeProviderConfig({ providerId: settings.providerId, compatibilityMatrix: syncMatrix }),
     createIfMissing: true,
   }).then(target => {
     if (target) log(`SYNC opencode provider written to ${target}`)
