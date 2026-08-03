@@ -2,6 +2,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { getPaths, ensureParentDir } from "../config/paths.js"
 import { readSecrets } from "../config/store.js"
+import { resolveEnabled, readEnablement } from "../config/model-enablement.js"
 import { deriveCatalogFromCompatibility, fallbackCatalog } from "../shared/catalog.js"
 import {
   COMMANDCODE_PROVIDER,
@@ -192,9 +193,11 @@ function buildModelConfig(provider) {
   const catalog = provider.kind === "commandcode"
     ? (derivedCatalog.length > 0 ? derivedCatalog : fallbackCatalog())
     : derivedCatalog
-  for (const { id, name, context_length } of catalog) {
+  const enablementStore = provider.kind === "commandcode" ? readEnablementStore() : null
+  for (const { id, name, context_length, tier } of catalog) {
     const compat = compatibilityMatrix?.models?.[id]
     if (compat?.status === "broken") continue
+    if (enablementStore && !resolveEnabled(id, tier, enablementStore)) continue
     const supportedInputs = provider.kind === "commandcode"
       ? resolveBridgeInputModalities(compat)
       : resolveSupportedInputs(compat)
@@ -398,4 +401,12 @@ function detectCliPath() {
     candidates.push(join(dir, "opencode"))
   }
   return candidates.find(candidate => candidate && existsSync(candidate)) || null
+}
+
+function readEnablementStore() {
+  try {
+    return readEnablement()
+  } catch {
+    return { enabled: {} }
+  }
 }

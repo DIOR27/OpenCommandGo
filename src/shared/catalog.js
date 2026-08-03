@@ -1,30 +1,6 @@
 import { FALLBACK_MODEL_REGISTRY, resolveFallbackModelHints } from "./models.js"
 import { resolveContextWindow } from "./context-windows.js"
-
-export function isCommandCodeClaudeModel(model) {
-  const raw = String(model || "").trim().toLowerCase()
-  return raw.includes("claude")
-}
-
-export function isCommandCodeOpenAIModel(model) {
-  const normalized = comparableCommandCodeModel(model)
-  const leaf = normalized.split("/").pop() ?? normalized
-  return (
-    leaf.startsWith("gpt-")
-    || leaf.startsWith("o1")
-    || leaf.startsWith("o3")
-    || leaf.startsWith("o4")
-    || leaf.includes("codex")
-  )
-}
-
-export function isAlphaCandidateModel(model) {
-  return !isCommandCodeClaudeModel(model) && !isCommandCodeOpenAIModel(model)
-}
-
-export function comparableCommandCodeModel(model) {
-  return String(model || "").trim().toLowerCase().replace(/[._]/g, "-")
-}
+import { deriveCatalogTier } from "./catalog-tier.js"
 
 export function extractModelRows(data) {
   if (Array.isArray(data)) return data.filter(isRecord)
@@ -69,9 +45,10 @@ export function normalizeCatalogRows(rawModels) {
   const result = []
   for (const raw of rawModels) {
     const id = firstString(raw.id, raw.model, raw.name)
-    if (!id || seen.has(id) || !isAlphaCandidateModel(id)) continue
+    if (!id || seen.has(id)) continue
     seen.add(id)
     const inferredCapabilities = inferCatalogCapabilities(raw, id)
+    const { section, tier } = deriveCatalogTier(raw.section, id)
     result.push({
       id,
       name: firstString(raw.display_name, raw.displayName, raw.label, raw.name) || id,
@@ -84,6 +61,8 @@ export function normalizeCatalogRows(rawModels) {
         raw.max_context_length,
       )),
       catalog_capabilities: inferredCapabilities,
+      section,
+      tier,
     })
   }
   return result
@@ -92,18 +71,23 @@ export function normalizeCatalogRows(rawModels) {
 export function deriveCatalogFromCompatibility(compatibilityMatrix) {
   const entries = Object.entries(compatibilityMatrix?.models || {})
     .filter(([, info]) => info && typeof info === "object" && info.status !== "broken")
-    .map(([id, info]) => ({
-      id,
-      name: info.name || id,
-      context_length: resolveContextWindow(id, info.context_length),
-      catalog_capabilities: {
-        vision: normalizeStoredVisionCapability(info),
-        pdf: normalizeStoredPdfCapability(info),
-        audio: normalizeStoredGenericCapability(info, "audio"),
-        video: normalizeStoredGenericCapability(info, "video"),
-        reasoning: normalizeStoredGenericCapability(info, "reasoning"),
-      },
-    }))
+    .map(([id, info]) => {
+      const { section, tier } = deriveCatalogTier(info.section, id)
+      return {
+        id,
+        name: info.name || id,
+        context_length: resolveContextWindow(id, info.context_length),
+        catalog_capabilities: {
+          vision: normalizeStoredVisionCapability(info),
+          pdf: normalizeStoredPdfCapability(info),
+          audio: normalizeStoredGenericCapability(info, "audio"),
+          video: normalizeStoredGenericCapability(info, "video"),
+          reasoning: normalizeStoredGenericCapability(info, "reasoning"),
+        },
+        section,
+        tier,
+      }
+    })
   return entries.length > 0 ? entries : fallbackCatalog()
 }
 

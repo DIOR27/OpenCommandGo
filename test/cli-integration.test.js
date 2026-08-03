@@ -233,7 +233,7 @@ describe("ocg chat/completions integration", () => {
     assert.equal(response.json.usage.completion_tokens, 7)
     assert.equal(response.json._meta.shim, "opencg-cli")
 
-    const upstream = mock.takeAlphaRequests()
+        const upstream = mock.takeAlphaRequests()
     assert.equal(upstream.length, 1)
     assert.equal(upstream[0].headers.authorization, "Bearer test-commandcode-key")
     assert.equal(upstream[0].payload.params.model, "xiaomi/MiMo-V2.5")
@@ -622,6 +622,78 @@ describe("ocg chat/completions integration", () => {
   })
 })
 
+describe("ocg enablement filtering (FR-04/FR-05)", () => {
+  it("/v1/models lists only enabled models and omits disabled premium", { timeout: 20000 }, async () => {
+    const mock = await startMockCommandCodeServer()
+    const ctx = createIsolatedCliContext(await getFreePort(), mock.port)
+    registerCleanup(ctx, mock)
+
+    await runCli(["--background"], ctx.env)
+    const secrets = readJson(ctx.paths.secretsFile)
+    await waitForHealth(ctx.port, secrets.shimAccessToken)
+
+    const modelList = await getJson(`http://127.0.0.1:${ctx.port}/v1/models`, secrets.shimAccessToken)
+    assert.equal(modelList.status, 200)
+    const ids = modelList.json.data.map(entry => entry.id)
+    assert.ok(ids.includes("xiaomi/MiMo-V2.5"), "open-source default enabled must be listed")
+    assert.ok(!ids.includes("anthropic/claude-sonnet-5"), "disabled premium must not be listed")
+  })
+
+  it("chat rejects a disabled model with model_not_allowed", { timeout: 20000 }, async () => {
+    const mock = await startMockCommandCodeServer()
+    const ctx = createIsolatedCliContext(await getFreePort(), mock.port)
+    registerCleanup(ctx, mock)
+
+    await runCli(["--background"], ctx.env)
+    const secrets = readJson(ctx.paths.secretsFile)
+    await waitForHealth(ctx.port, secrets.shimAccessToken)
+
+    const response = await postJson(`http://127.0.0.1:${ctx.port}/v1/chat/completions`, {
+      model: "anthropic/claude-sonnet-5",
+      messages: [{ role: "user", content: "hola" }],
+    }, secrets.shimAccessToken)
+
+    assert.equal(response.status, 400)
+    assert.equal(response.json.error?.type, "model_not_allowed")
+    assert.equal(mock.takeAlphaRequests().length, 0, "no upstream call for disabled model")
+  })
+
+  it("enabled premium model passes the gate and upstream 403 is re-mapped to premium_model", { timeout: 20000 }, async () => {
+    const mock = await startMockCommandCodeServer()
+    const ctx = createIsolatedCliContext(await getFreePort(), mock.port)
+    registerCleanup(ctx, mock)
+    seedEnablementStore(ctx, { "anthropic/claude-sonnet-5": true })
+
+    await runCli(["--background"], ctx.env)
+    const secrets = readJson(ctx.paths.secretsFile)
+    await waitForHealth(ctx.port, secrets.shimAccessToken)
+
+    const modelList = await getJson(`http://127.0.0.1:${ctx.port}/v1/models`, secrets.shimAccessToken)
+    assert.ok(modelList.json.data.some(entry => entry.id === "anthropic/claude-sonnet-5"), "enabled premium listed")
+
+    mock.enqueueAlphaResponse({
+      status: 403,
+      body: JSON.stringify({ error: { message: "premium coverage required" } }),
+    })
+
+    const response = await postJson(`http://127.0.0.1:${ctx.port}/v1/chat/completions`, {
+      model: "anthropic/claude-sonnet-5",
+      messages: [{ role: "user", content: "hola" }],
+    }, secrets.shimAccessToken)
+
+    assert.equal(response.status, 403)
+    assert.equal(response.json.error?.type, "premium_model")
+    assert.match(response.json.error?.message, /anthropic\/claude-sonnet-5/)
+    assert.match(response.json.error?.message, /premium/i)
+  })
+})
+
+function seedEnablementStore(ctx, enabled) {
+  const file = join(ctx.paths.dataDir, "model-enablement.json")
+  mkdirSync(dirname(file), { recursive: true })
+  writeFileSync(file, JSON.stringify({ version: 1, enabled }, null, 2), "utf8")
+}
+
 function createIsolatedCliContext(port, mockPort) {
   const root = mkdtempSync(join(tmpdir(), "ocg-integration-"))
   const userProfile = join(root, "user")
@@ -774,6 +846,17 @@ async function startMockCommandCodeServer() {
               video: true,
             },
             tags: ["reasoning"],
+          },
+          {
+            id: "anthropic/claude-sonnet-5",
+            display_name: "Claude Sonnet 5",
+            context_length: 200000,
+            capabilities: {
+              vision: true,
+              pdf: true,
+              audio: false,
+              video: false,
+            },
           },
         ],
       }))

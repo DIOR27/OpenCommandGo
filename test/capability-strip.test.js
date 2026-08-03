@@ -4,6 +4,7 @@ import { comparableCommandCodeModel, resolveBridgeInputModalities, resolveFallba
 import { toCommandCodeMessages } from "../src/runtime/chat-bridge.js"
 import { buildCatalogOnlyCompatibilityEntry, createCatalogController } from "../src/runtime/catalog-runtime.js"
 import { buildCmdCatalogRows } from "../src/shared/commandcode-cmd-catalog.js"
+import { deriveCatalogFromCompatibility, normalizeCatalogRows } from "../src/shared/catalog.js"
 
 describe("xiaomi mimo capability separation", () => {
   it("mimo-v2-5-pro does not inherit vision/pdf from mimo-v2-5 family hint", () => {
@@ -60,6 +61,52 @@ describe("xiaomi mimo capability separation", () => {
 
     assert.equal(row.catalog_capabilities.vision.supported, null)
     assert.equal(row.catalog_capabilities.pdf.supported, null)
+  })
+})
+
+describe("premium catalog retention (FR-01)", () => {
+  it("normalizeCatalogRows does not drop claude/gpt rows and tags them premium", () => {
+    const rows = normalizeCatalogRows([
+      { id: "anthropic/claude-sonnet-5", name: "Claude Sonnet 5", display_name: "Claude Sonnet 5" },
+      { id: "openai/gpt-5", name: "GPT-5", display_name: "GPT-5" },
+      { id: "deepseek/deepseek-v4-flash", name: "DeepSeek V4 Flash", display_name: "DeepSeek V4 Flash" },
+    ])
+
+    assert.deepStrictEqual(
+      rows.map(row => row.id).sort(),
+      ["anthropic/claude-sonnet-5", "deepseek/deepseek-v4-flash", "openai/gpt-5"],
+      "claude and gpt rows must survive normalizeCatalogRows",
+    )
+    const byId = Object.fromEntries(rows.map(row => [row.id, row]))
+    assert.equal(byId["anthropic/claude-sonnet-5"].tier, "premium")
+    assert.equal(byId["openai/gpt-5"].tier, "premium")
+    assert.equal(byId["deepseek/deepseek-v4-flash"].tier, "open-source")
+  })
+
+  it("deriveCatalogFromCompatibility copies tier from matrix entries", () => {
+    const matrix = {
+      models: {
+        "anthropic/claude-sonnet-5": { name: "Claude Sonnet 5", status: "ok", tier: "premium" },
+        "deepseek/deepseek-v4-flash": { name: "DeepSeek V4 Flash", status: "ok", tier: "open-source" },
+      },
+    }
+    const catalog = deriveCatalogFromCompatibility(matrix)
+    const byId = Object.fromEntries(catalog.map(row => [row.id, row]))
+    assert.equal(byId["anthropic/claude-sonnet-5"].tier, "premium")
+    assert.equal(byId["deepseek/deepseek-v4-flash"].tier, "open-source")
+  })
+
+  it("deriveCatalogFromCompatibility falls back to family heuristic when entry has no tier", () => {
+    const matrix = {
+      models: {
+        "anthropic/claude-sonnet-5": { name: "Claude Sonnet 5", status: "ok" },
+        "deepseek/deepseek-v4-flash": { name: "DeepSeek V4 Flash", status: "ok" },
+      },
+    }
+    const catalog = deriveCatalogFromCompatibility(matrix)
+    const byId = Object.fromEntries(catalog.map(row => [row.id, row]))
+    assert.equal(byId["anthropic/claude-sonnet-5"].tier, "premium")
+    assert.equal(byId["deepseek/deepseek-v4-flash"].tier, "open-source")
   })
 })
 

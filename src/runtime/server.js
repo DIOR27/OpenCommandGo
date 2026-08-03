@@ -1,9 +1,10 @@
 import { createServer } from "node:http"
 import { getPaths, ensureDir } from "../config/paths.js"
 import { clearPid, getRuntimeSettings, readCompatibilityMatrix, writeCompatibilityMatrix, writePid } from "../config/store.js"
+import { filterEnabledModels, readEnablement, resolveEnabled } from "../config/model-enablement.js"
 import { COMMANDCODE_PROVIDER, resolveBridgeInputModalities } from "../shared/models.js"
 import { t } from "../shared/i18n.js"
-import { buildOpenAICompletion, callCommandCodeAlpha, startCommandCodeAlphaStream, streamOpenAIResponse, summarizeIncomingMessages } from "./chat-bridge.js"
+import { buildOpenAICompletion, callCommandCodeAlpha, startCommandCodeAlphaStream, streamOpenAIResponse, summarizeIncomingMessages, UpstreamError } from "./chat-bridge.js"
 import { createCatalogController } from "./catalog-runtime.js"
 import { syncOpenCodeConfig } from "../opencode/config.js"
 import { fetchCommandCodeUsage, formatUsageLine, getCachedUsage, isUsageFresh } from "./usage-tracker.js"
@@ -45,6 +46,7 @@ export async function startServer() {
   ensureDir(paths.logDir)
 
   const server = createServer(async (req, res) => {
+    let requestModel = null
     try {
       if (req.method === "OPTIONS") {
         res.writeHead(204)
@@ -102,7 +104,7 @@ export async function startServer() {
         if (!requireShimAuth(req, res, settings)) return
         return json(res, 200, {
           object: "list",
-          data: commandCodeCatalogController.buildModelList(),
+          data: commandCodeCatalogController.buildEnabledModelList(),
         })
       }
 
@@ -110,7 +112,7 @@ export async function startServer() {
         if (!requireShimAuth(req, res, settings)) return
         return json(res, 200, {
           object: "list",
-          data: commandCodeCatalogController.buildModelList(),
+          data: commandCodeCatalogController.buildEnabledModelList(),
         })
       }
 
@@ -131,9 +133,13 @@ export async function startServer() {
         log(`REQUEST raw model=${body.model || ""} content_summary=${summarizeIncomingMessages(body.messages)}`)
 
         const model = typeof body.model === "string" ? body.model.trim() : ""
+        requestModel = model
         const catalogEntry = commandCodeCatalogController.getAvailableCatalog().find(entry => entry.id === model)
         if (!catalogEntry) {
           return json(res, 400, openAIError("model_not_allowed", `Modelo no permitido: ${model || "(vacío)"}`))
+        }
+        if (!resolveEnabled(model, catalogEntry.tier, readEnablement())) {
+          return json(res, 400, openAIError("model_not_allowed", `Modelo deshabilitado: ${model || "(vacío)"}`))
         }
 
         const compat = compatibilityMatrix?.models?.[model]
@@ -167,6 +173,13 @@ export async function startServer() {
       json(res, 404, openAIError("not_found", `Ruta no soportada: ${req.method} ${url.pathname}`))
     } catch (error) {
       log(`ERROR ${error instanceof Error ? error.stack || error.message : String(error)}`)
+      if (error instanceof UpstreamError && error.status === 403) {
+        const model = requestModel
+        return json(res, 403, openAIError(
+          "premium_model",
+          `El modelo ${model || "(vacío)"} requiere cobertura premium en tu plan: ${error.message}`,
+        ))
+      }
       json(res, 500, openAIError("server_error", error instanceof Error ? error.message : "Error interno"))
     }
   })

@@ -1,5 +1,6 @@
 import { syncOpenCodeConfig } from "../opencode/config.js"
 import { applyManualOverrides } from "../config/manual-capabilities.js"
+import { filterEnabledModels, readEnablement } from "../config/model-enablement.js"
 import { deriveCatalogFromCompatibility, extractModelRows, fallbackCatalog, normalizeCatalogRows } from "../shared/catalog.js"
 import { supportsCommandCodeReasoning } from "../shared/commandcode-thinking.js"
 import { resolveContextWindow } from "../shared/context-windows.js"
@@ -21,6 +22,8 @@ export function createCatalogController({ initialCompatibilityMatrix, writeCompa
     getCompatibilityMatrix: () => compatibilityMatrix,
     getAvailableCatalog: () => availableCatalog,
     buildModelList: () => availableCatalog.map(model => buildModelDescriptor(model, compatibilityMatrix?.models?.[model.id])),
+    buildEnabledModelList: () => filterEnabledModels(availableCatalog, readEnablement())
+      .map(model => buildModelDescriptor(model, compatibilityMatrix?.models?.[model.id])),
     async syncProviderConfig(settings) {
       await syncOpenCodeConfig({
         host: settings.host,
@@ -113,7 +116,7 @@ export function createCatalogController({ initialCompatibilityMatrix, writeCompa
 
       if (!verifyAvailability || probeMode === "catalog") {
         for (const row of catalog) {
-          const { id, name, context_length, catalog_capabilities, tags } = row
+          const { id, name, context_length, catalog_capabilities, tags, section, tier } = row
           const previous = compatibilityMatrix?.models?.[id]
           next.models[id] = buildCatalogOnlyCompatibilityEntry({
             id,
@@ -121,6 +124,8 @@ export function createCatalogController({ initialCompatibilityMatrix, writeCompa
             tags,
             context_length,
             catalogCapabilities: catalog_capabilities,
+            section,
+            tier,
             previous,
           })
         }
@@ -151,7 +156,7 @@ export function createCatalogController({ initialCompatibilityMatrix, writeCompa
 
       const runOne = async rowIndex => {
         const row = catalog[rowIndex]
-        const { id, name, context_length, catalog_capabilities, tags } = row
+        const { id, name, context_length, catalog_capabilities, tags, section, tier } = row
         options.onProgress?.({
           provider: "commandcode",
           type: "model-start",
@@ -166,6 +171,8 @@ export function createCatalogController({ initialCompatibilityMatrix, writeCompa
           probeMode,
         })
         tested.context_length = resolveContextWindow(id, context_length)
+        tested.section = section
+        tested.tier = tier
         const previous = compatibilityMatrix?.models?.[id]
 
         if (shouldPreservePreviousCompatibility(tested, previous)) {
@@ -174,6 +181,8 @@ export function createCatalogController({ initialCompatibilityMatrix, writeCompa
             name,
             tags,
             context_length: resolveContextWindow(id, context_length),
+            section,
+            tier,
             capabilities: mergeCapabilities(previous?.capabilities, tested.capabilities),
             tested_at: tested.tested_at,
             last_probe_status: tested.status,
@@ -250,7 +259,7 @@ export function createCatalogController({ initialCompatibilityMatrix, writeCompa
         log(`CATALOG cmd_binary=${cmdPath}`)
         const stdout = await fetchCmdModelList({ cmdPath, timeoutMs: 10000 })
         const parsed = parseCmdModelList(stdout)
-        cmdRows = buildCmdCatalogRows(parsed, { filterSection: "Open Source" })
+        cmdRows = buildCmdCatalogRows(parsed)
         if (cmdRows.length > 0) {
           cmdSourced = true
           log(`CATALOG cmd_source models=${cmdRows.length}`)
@@ -663,7 +672,7 @@ function resolveRefreshConcurrency(value, probeMode, modelCount) {
   return Math.max(1, Math.min(normalized, Math.max(1, modelCount)))
 }
 
-export function buildCatalogOnlyCompatibilityEntry({ id, name, tags, context_length, catalogCapabilities, previous }) {
+export function buildCatalogOnlyCompatibilityEntry({ id, name, tags, context_length, catalogCapabilities, section, tier, previous }) {
   const contextWindow = resolveContextWindow(id, context_length)
   const previousVision = previous?.capabilities?.vision
   const previousVisionTrusted =
@@ -679,6 +688,8 @@ export function buildCatalogOnlyCompatibilityEntry({ id, name, tags, context_len
     tags: Array.isArray(tags) ? tags : (previous?.tags || []),
     tested_at: previous?.tested_at || null,
     status: "catalog_only",
+    section,
+    tier,
     text: previous?.text || { ok: null, output_chars: 0 },
     image: {
       ok: typeof catalogCapabilities?.vision?.supported === "boolean"

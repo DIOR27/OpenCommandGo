@@ -6,6 +6,18 @@ import { writeSSE } from "./http-utils.js"
 
 const UPSTREAM_TIMEOUT_MS = 120000
 
+/**
+ * Error carrying the upstream HTTP status so the server can map
+ * plan-gated 403s to a clear premium error instead of a generic 500.
+ */
+export class UpstreamError extends Error {
+  constructor(status, message) {
+    super(message)
+    this.name = "UpstreamError"
+    this.status = status
+  }
+}
+
 export async function callCommandCodeAlpha(body, model, settings, options = {}) {
   const sessionId = randomUUID()
   const startedAt = Date.now()
@@ -18,7 +30,7 @@ export async function callCommandCodeAlpha(body, model, settings, options = {}) 
   const raw = await response.text()
   if (!response.ok) {
     options.log?.(`UPSTREAM ${response.status} ${raw}`)
-    throw new Error(t("error.upstream", response.status, raw.slice(0, 500)))
+    throw new UpstreamError(response.status, t("error.upstream", response.status, raw.slice(0, 500)))
   }
 
   const events = parseEventLines(raw)
@@ -48,7 +60,7 @@ export async function startCommandCodeAlphaStream(body, model, settings, options
   if (!response.ok) {
     const raw = await response.text()
     options.log?.(`UPSTREAM ${response.status} ${raw}`)
-    throw new Error(t("error.upstream", response.status, raw.slice(0, 500)))
+    throw new UpstreamError(response.status, t("error.upstream", response.status, raw.slice(0, 500)))
   }
   if (!response.body) {
     throw new Error(t("error.upstream_no_body"))

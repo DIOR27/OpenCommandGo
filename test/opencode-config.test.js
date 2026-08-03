@@ -273,6 +273,105 @@ describe("syncOpenCodeConfig", () => {
     })
   })
 
+  it("sync writes only enabled models to opencode.json (FR-04)", async () => {
+    await withOpenCodeFixture(async root => {
+      const file = await seedExistingConfig(root)
+
+      await syncCommandCode({
+        models: {
+          "deepseek/deepseek-v4-flash": {
+            name: "DeepSeek V4 Flash",
+            status: "ok",
+            tier: "open-source",
+            capabilities: {
+              vision: { supported: null, source: null },
+              pdf: { supported: null, source: null },
+              audio: { supported: null, source: null },
+              video: { supported: null, source: null },
+            },
+          },
+          "anthropic/claude-sonnet-5": {
+            name: "Claude Sonnet 5",
+            status: "ok",
+            tier: "premium",
+            capabilities: {
+              vision: { supported: null, source: null },
+              pdf: { supported: null, source: null },
+              audio: { supported: null, source: null },
+              video: { supported: null, source: null },
+            },
+          },
+          "openai/gpt-5": {
+            name: "GPT-5",
+            status: "ok",
+            tier: "premium",
+            capabilities: {
+              vision: { supported: null, source: null },
+              pdf: { supported: null, source: null },
+              audio: { supported: null, source: null },
+              video: { supported: null, source: null },
+            },
+          },
+          "broken/model": {
+            name: "Broken",
+            status: "broken",
+            tier: "open-source",
+          },
+        },
+      })
+
+      const models = readProvider(file).models
+      assert.ok(models["deepseek/deepseek-v4-flash"], "open-source enabled default stays")
+      assert.equal(models["anthropic/claude-sonnet-5"], undefined, "disabled premium absent")
+      assert.equal(models["openai/gpt-5"], undefined, "disabled premium absent")
+      assert.equal(models["broken/model"], undefined, "broken status still excluded")
+    })
+  })
+
+  it("sync writes explicitly enabled premium models and respects explicit false (FR-04)", async () => {
+    await withOpenCodeFixture(async root => {
+      const file = await seedExistingConfig(root)
+      writeFileSync(join(root, "ocg", "model-enablement.json"), JSON.stringify({
+        version: 1,
+        enabled: {
+          "anthropic/claude-sonnet-5": true,
+          "deepseek/deepseek-v4-flash": false,
+        },
+      }), "utf8")
+
+      await syncCommandCode({
+        models: {
+          "anthropic/claude-sonnet-5": {
+            name: "Claude Sonnet 5",
+            status: "ok",
+            tier: "premium",
+            capabilities: {
+              vision: { supported: null, source: null },
+              pdf: { supported: null, source: null },
+              audio: { supported: null, source: null },
+              video: { supported: null, source: null },
+            },
+          },
+          "deepseek/deepseek-v4-flash": {
+            name: "DeepSeek V4 Flash",
+            status: "ok",
+            tier: "open-source",
+            capabilities: {
+              vision: { supported: null, source: null },
+              pdf: { supported: null, source: null },
+              audio: { supported: null, source: null },
+              video: { supported: null, source: null },
+            },
+          },
+        },
+      })
+
+      const models = readProvider(file).models
+      assert.ok(models["anthropic/claude-sonnet-5"], "explicitly enabled premium written")
+      assert.equal(models["deepseek/deepseek-v4-flash"], undefined, "explicit false excludes open-source model")
+    })
+  })
+
   it("matches providerless ids and transfers vision support", async () => {
     await withOpenCodeFixture(async root => {
       const file = await seedExistingConfig(root, {
