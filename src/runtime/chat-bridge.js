@@ -21,24 +21,38 @@ export class UpstreamError extends Error {
 export async function callCommandCodeAlpha(body, model, settings, options = {}) {
   const sessionId = randomUUID()
   const startedAt = Date.now()
-  const payload = buildCommandCodePayload(body, model, sessionId)
+  let retryModel = null
 
+  let payload = buildCommandCodePayload(body, model, sessionId)
   options.log?.(`REQUEST start session=${sessionId} model=${model} stream=${body.stream === true} messages=${payload.params.messages.length} tools=${payload.params.tools?.length || 0}`)
 
-  const response = await fetchCommandCodeAlpha(payload, sessionId, settings, options)
+  let response = await fetchCommandCodeAlpha(payload, sessionId, settings, options)
 
-  const raw = await response.text()
   if (!response.ok) {
+    const raw = await response.text()
     options.log?.(`UPSTREAM ${response.status} ${raw}`)
-    throw new UpstreamError(response.status, t("error.upstream", response.status, raw.slice(0, 500)))
+    retryModel = extractRetryModelFromUnrecognizedError(raw, model)
+    if (retryModel) {
+      options.log?.(`UPSTREAM retry model=${retryModel} (dropping provider prefix from unrecognized model)`)
+      payload = buildCommandCodePayload(body, retryModel, sessionId)
+      response = await fetchCommandCodeAlpha(payload, sessionId, settings, options)
+      if (!response.ok) {
+        const raw2 = await response.text()
+        options.log?.(`UPSTREAM ${response.status} ${raw2}`)
+        throw new UpstreamError(response.status, t("error.upstream", response.status, raw2.slice(0, 500)))
+      }
+    } else {
+      throw new UpstreamError(response.status, t("error.upstream", response.status, raw.slice(0, 500)))
+    }
   }
 
+  const raw = await response.text()
   const events = parseEventLines(raw)
   const finishEvent = [...events].reverse().find(event =>
     ["finish", "done", "message_stop"].includes(String(event.type || event.event || "").toLowerCase()),
   ) || null
   const reasoning = collectReasoning(events)
-  options.log?.(`REQUEST done session=${sessionId} model=${model} duration_ms=${Date.now() - startedAt} events=${events.length} reasoning_chars=${reasoning.length}`)
+  options.log?.(`REQUEST done session=${sessionId} model=${retryModel || model} duration_ms=${Date.now() - startedAt} events=${events.length} reasoning_chars=${reasoning.length}`)
 
   return {
     events,
@@ -52,15 +66,28 @@ export async function callCommandCodeAlpha(body, model, settings, options = {}) 
 export async function startCommandCodeAlphaStream(body, model, settings, options = {}) {
   const sessionId = randomUUID()
   const startedAt = Date.now()
-  const payload = buildCommandCodePayload(body, model, sessionId)
+  let retryModel = null
+  let payload = buildCommandCodePayload(body, model, sessionId)
 
   options.log?.(`REQUEST start session=${sessionId} model=${model} stream=true messages=${payload.params.messages.length} tools=${payload.params.tools?.length || 0}`)
 
-  const response = await fetchCommandCodeAlpha(payload, sessionId, settings, options)
+  let response = await fetchCommandCodeAlpha(payload, sessionId, settings, options)
   if (!response.ok) {
     const raw = await response.text()
     options.log?.(`UPSTREAM ${response.status} ${raw}`)
-    throw new UpstreamError(response.status, t("error.upstream", response.status, raw.slice(0, 500)))
+    retryModel = extractRetryModelFromUnrecognizedError(raw, model)
+    if (!retryModel) {
+      throw new UpstreamError(response.status, t("error.upstream", response.status, raw.slice(0, 500)))
+    }
+
+    options.log?.(`UPSTREAM retry model=${retryModel} (dropping provider prefix from unrecognized model)`)
+    payload = buildCommandCodePayload(body, retryModel, sessionId)
+    response = await fetchCommandCodeAlpha(payload, sessionId, settings, options)
+    if (!response.ok) {
+      const raw2 = await response.text()
+      options.log?.(`UPSTREAM ${response.status} ${raw2}`)
+      throw new UpstreamError(response.status, t("error.upstream", response.status, raw2.slice(0, 500)))
+    }
   }
   if (!response.body) {
     throw new Error(t("error.upstream_no_body"))
@@ -437,6 +464,24 @@ function buildCommandCodePayload(body, model, sessionId) {
       ...(systemTextFromMessages(body.messages) ? { system: systemTextFromMessages(body.messages) } : {}),
     },
   }
+}
+
+/**
+ * When the upstream rejects a model with "Model/provider not recognized:
+ * anthropic:minimaxai/minimax-m3", it means Command Code assumed a provider
+ * prefix (anthropic:) that does not match the model. Extract the providerless
+ * variant (minimaxai/minimax-m3) so the caller can retry without the prefix.
+ * @param {string} raw - upstream error body
+ * @param {string} currentModel - the model that was sent
+ * @returns {string|null} retry model id, or null when no retry applies
+ */
+export function extractRetryModelFromUnrecognizedError(raw, currentModel) {
+  if (!raw || typeof raw !== "string") return null
+  const match = String(raw).match(/Model\/provider not recognized:\s*[^:\s]+:(\S+)/)
+  if (!match) return null
+  const retryModel = match[1].trim()
+  if (!retryModel || retryModel === currentModel) return null
+  return retryModel
 }
 
 function fetchCommandCodeAlpha(payload, sessionId, settings, options = {}) {
